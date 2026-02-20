@@ -19,6 +19,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,7 +53,7 @@ fun MainScreen() {
     val cardBackground = CardBackground
 
     val scrollState = rememberScrollState()
-    var selectedApps by remember { mutableStateOf(setOf<TargetApp>()) }
+    var selectedApps by remember { mutableStateOf(setOf(TargetApp.Instagram, TargetApp.TikTok)) }
 
     Column(
         modifier = Modifier
@@ -101,7 +103,7 @@ fun MainScreen() {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Select the app(s) you want to intervene.\nYou can only select and submit them once.",
+                text = "Select the app(s) you want to intervene.\nYou can only select and submit them once.\nIf you do not submit your choice on the day before the study starts, both apps are targeted.",
                 fontSize = 14.sp,
                 color = SecondaryText
             )
@@ -125,7 +127,41 @@ fun MainScreen() {
                     onToggle = { selectedApps = selectedApps.toggle(TargetApp.TikTok) }
                 )
             }
-            // TODO: implement submit button
+            Spacer(Modifier.height(25.dp))
+
+            val canSubmit = selectedApps.isNotEmpty()
+
+            Button(
+                onClick = {
+
+                },
+                enabled = canSubmit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = SubmitButtonBackground,
+                    disabledContainerColor = SubmitButtonBackground.copy(alpha = 0.5f),
+                    contentColor = PrimaryText,
+                    disabledContentColor = PrimaryText.copy(alpha = 0.6f)
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text(
+                    text = "SUBMIT",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp,
+                    letterSpacing = 1.sp
+                )
+            }
+            if (!canSubmit) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Please select at least one app.",
+                    color = SecondaryText,
+                    fontSize = 12.sp
+                )
+            }
             // TODO: implement confirmation Dialog to confirm choice
         }
     }
