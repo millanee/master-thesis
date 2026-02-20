@@ -15,13 +15,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import com.millane.thesis.application.R
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
 
@@ -57,6 +68,10 @@ fun MainScreen() {
     var selectedApps by remember { mutableStateOf(setOf(TargetApp.Instagram, TargetApp.TikTok)) }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var submitted by remember { mutableStateOf(false) }
+
+    var goalInput by remember { mutableStateOf("") }
+    var goals by remember { mutableStateOf(listOf("Create Figma Design", "Read Book")) } // demo defaults
+    val focusManager = LocalFocusManager.current
 
     Column(
         modifier = Modifier
@@ -90,6 +105,114 @@ fun MainScreen() {
             Spacer(Modifier.height(24.dp))
 
             // TODO: add goals list and add input field to input daily goals
+            // Inner list panel
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = InnerCardBackground,
+                shape = RoundedCornerShape(18.dp),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Your goals for today:",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = PrimaryText
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (goals.isEmpty()) {
+                        Text(
+                            text = "No goals added yet.",
+                            fontSize = 14.sp,
+                            color = SecondaryText
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            goals.forEach { goal ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("•", fontSize = 18.sp, color = PrimaryText)
+
+                                    Spacer(Modifier.width(10.dp))
+
+                                    Text(
+                                        text = goal,
+                                        fontSize = 14.sp,
+                                        color = PrimaryText,
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    IconButton(
+                                        onClick = {
+                                            goals = goals - goal
+                                        },
+                                        modifier = Modifier.size(18.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Delete,
+                                            contentDescription = "Delete goal",
+                                            tint = PrimaryText,
+                                            modifier = Modifier.size(16.dp)
+
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = goalInput,
+                    onValueChange = { goalInput = it },
+                    placeholder = { Text("Add a goal…", color = SecondaryText) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            val trimmed = goalInput.trim()
+                            if (trimmed.isNotEmpty()) {
+                                goals = goals + trimmed
+                                goalInput = ""
+                            }
+                            focusManager.clearFocus()
+                        }
+                    )
+                )
+
+                Spacer(Modifier.width(10.dp))
+
+                IconButton(
+                    onClick = {
+                        val trimmed = goalInput.trim()
+                        if (trimmed.isNotEmpty()) {
+                            goals = goals + trimmed
+                            goalInput = ""
+                            focusManager.clearFocus()
+                        }
+                    },
+                    enabled = goalInput.trim().isNotEmpty()
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = "Add goal",
+                        tint = if (goalInput.trim().isNotEmpty()) PrimaryText else SecondaryText
+                    )
+                }
+            }
         }
 
         // Select apps
