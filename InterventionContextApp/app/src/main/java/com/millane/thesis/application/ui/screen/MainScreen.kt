@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.millane.thesis.application.R
+import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
 
 import com.millane.thesis.application.ui.theme.*
 
@@ -54,6 +55,8 @@ fun MainScreen() {
 
     val scrollState = rememberScrollState()
     var selectedApps by remember { mutableStateOf(setOf(TargetApp.Instagram, TargetApp.TikTok)) }
+    var showConfirmDialog by remember { mutableStateOf(false) }
+    var submitted by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -117,6 +120,7 @@ fun MainScreen() {
                     label = "Instagram",
                     iconRes = R.drawable.instagram_icon,
                     selected = selectedApps.contains(TargetApp.Instagram),
+                    enabled = !submitted,
                     onToggle = { selectedApps = selectedApps.toggle(TargetApp.Instagram) }
                 )
 
@@ -124,6 +128,7 @@ fun MainScreen() {
                     label = "TikTok",
                     iconRes = R.drawable.tiktok_icon,
                     selected = selectedApps.contains(TargetApp.TikTok),
+                    enabled = !submitted,
                     onToggle = { selectedApps = selectedApps.toggle(TargetApp.TikTok) }
                 )
             }
@@ -132,10 +137,8 @@ fun MainScreen() {
             val canSubmit = selectedApps.isNotEmpty()
 
             Button(
-                onClick = {
-
-                },
-                enabled = canSubmit,
+                onClick = { showConfirmDialog = true },
+                enabled = selectedApps.isNotEmpty() && !submitted,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
@@ -148,7 +151,7 @@ fun MainScreen() {
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Text(
-                    text = "SUBMIT",
+                    if (submitted) "SUBMITTED" else "SUBMIT",
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 18.sp,
                     letterSpacing = 1.sp
@@ -162,7 +165,23 @@ fun MainScreen() {
                     fontSize = 12.sp
                 )
             }
-            // TODO: implement confirmation Dialog to confirm choice
+            if (showConfirmDialog) {
+                ConfirmationAndInterventionDialog(
+                    title = "Confirm App Selection",
+                    message = "Are you sure you want to\nlimit the following:",
+                    bullets = buildList {
+                        if (selectedApps.contains(TargetApp.Instagram)) add("Instagram")
+                        if (selectedApps.contains(TargetApp.TikTok)) add("TikTok")
+                    },
+                    confirmLabel = "Submit",
+                    dismissLabel = "Cancel",
+                    onConfirm = {
+                        submitted = true
+                        showConfirmDialog = false
+                    },
+                    onDismiss = { showConfirmDialog = false }
+                )
+            }
         }
     }
 }
@@ -189,12 +208,13 @@ private fun AppChoice(
     label: String,
     iconRes: Int,
     selected: Boolean,
+    enabled: Boolean,
     onToggle: () -> Unit
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.clickable { onToggle() }
+        modifier = Modifier.clickable(enabled = enabled) { onToggle() }
     ) {
         Image(
             painter = painterResource(id = iconRes),
