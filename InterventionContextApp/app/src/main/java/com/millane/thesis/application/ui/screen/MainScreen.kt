@@ -10,11 +10,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -29,12 +32,16 @@ fun MainScreen() {
     val pageBackground = PageBackground
     val cardBackground = CardBackground
 
+    val scrollState = rememberScrollState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(pageBackground)
+            .verticalScroll(scrollState)
             .padding(horizontal = 18.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Daily Goals - Goal Advancement
         RoundedCard(
@@ -101,6 +108,13 @@ private fun RoundedCard(
     ) {
         Column(Modifier.padding(20.dp), content = content)
     }
+}
+
+
+@Preview(name = "Small phone", widthDp = 320, heightDp = 800, showBackground = true)
+@Composable
+private fun PreviewSmallPhone() {
+    InterventionContextAppTheme { MainScreen() }
 }
 
 @Preview(showBackground = true, heightDp = 900)
