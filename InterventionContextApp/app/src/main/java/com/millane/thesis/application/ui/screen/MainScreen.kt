@@ -51,6 +51,7 @@ import androidx.compose.ui.text.input.ImeAction
 import com.millane.thesis.application.R
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
 import com.millane.thesis.application.ui.screen.components.RoundedCard
+import com.millane.thesis.application.ui.screen.sections.DailyGoalsCard
 
 import com.millane.thesis.application.ui.theme.*
 
@@ -84,136 +85,9 @@ fun MainScreen() {
     ) {
         Spacer(Modifier.height(20.dp))
         // Daily Goals - Goal Advancement
-        RoundedCard(
-            background = cardBackground,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 340.dp)
-        ) {
-            Text(
-                text = "Daily Goals",
-                fontSize = 34.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "Set or remove your goals for today",
-                fontSize = 16.sp,
-                color = SecondaryText
-            )
+        DailyGoalsCard()
 
-            Spacer(Modifier.height(24.dp))
-
-            // TODO: add goals list and add input field to input daily goals
-            // Inner list panel
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = InnerCardBackground,
-                shape = RoundedCornerShape(18.dp),
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Your goals for today:",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = PrimaryText
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-
-                    if (goals.isEmpty()) {
-                        Text(
-                            text = "No goals added yet.",
-                            fontSize = 14.sp,
-                            color = SecondaryText
-                        )
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            goals.forEach { goal ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("•", fontSize = 18.sp, color = PrimaryText)
-
-                                    Spacer(Modifier.width(10.dp))
-
-                                    Text(
-                                        text = goal,
-                                        fontSize = 14.sp,
-                                        color = PrimaryText,
-                                        modifier = Modifier.weight(1f)
-                                    )
-
-                                    IconButton(
-                                        onClick = {
-                                            goals = goals - goal
-                                        },
-                                        modifier = Modifier.size(18.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Delete,
-                                            contentDescription = "Delete goal",
-                                            tint = PrimaryText,
-                                            modifier = Modifier.size(16.dp)
-
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(18.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = goalInput,
-                    onValueChange = { goalInput = it },
-                    placeholder = { Text("Add a goal…", color = SecondaryText) },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            val trimmed = goalInput.trim()
-                            if (trimmed.isNotEmpty()) {
-                                goals = goals + trimmed
-                                goalInput = ""
-                            }
-                            focusManager.clearFocus()
-                        }
-                    )
-                )
-
-                Spacer(Modifier.width(10.dp))
-
-                IconButton(
-                    onClick = {
-                        val trimmed = goalInput.trim()
-                        if (trimmed.isNotEmpty()) {
-                            goals = goals + trimmed
-                            goalInput = ""
-                            focusManager.clearFocus()
-                        }
-                    },
-                    enabled = goalInput.trim().isNotEmpty()
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Add,
-                        contentDescription = "Add goal",
-                        tint = if (goalInput.trim().isNotEmpty()) PrimaryText else SecondaryText
-                    )
-                }
-            }
-        }
+        Spacer(Modifier.height(18.dp))
 
         // Select apps
         RoundedCard(
@@ -308,23 +182,6 @@ fun MainScreen() {
         }
     }
 }
-
-/*@Composable
-private fun RoundedCard(
-    background: Color,
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Surface(
-        modifier = modifier,
-        color = background,
-        shape = RoundedCornerShape(26.dp),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp
-    ) {
-        Column(Modifier.padding(20.dp), content = content)
-    }
-}*/
 
 @Composable
 private fun AppChoice(
