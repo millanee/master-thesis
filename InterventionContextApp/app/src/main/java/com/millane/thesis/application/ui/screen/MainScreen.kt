@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.millane.thesis.application.ui.screen.sections.DailyGoalsCard
+import com.millane.thesis.application.ui.screen.sections.LocationsCard
 import com.millane.thesis.application.ui.screen.sections.SelectAppsCard
 import com.millane.thesis.application.ui.theme.*
 
@@ -37,8 +38,11 @@ fun MainScreen() {
         // Daily Goals - Goal Advancement
         DailyGoalsCard()
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(12.dp))
 
+        LocationsCard()
+
+        Spacer(Modifier.height(12.dp))
         // Select apps
         SelectAppsCard()
     }
