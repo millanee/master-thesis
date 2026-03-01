@@ -1,5 +1,6 @@
 package com.millane.thesis.application.ui.screen
 
+import android.widget.Space
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.millane.thesis.application.ui.screen.sections.BedtimeCard
 import com.millane.thesis.application.ui.screen.sections.DailyGoalsCard
 import com.millane.thesis.application.ui.screen.sections.LocationsCard
 import com.millane.thesis.application.ui.screen.sections.SelectAppsCard
@@ -37,12 +39,8 @@ fun MainScreen() {
         Spacer(Modifier.height(20.dp))
         // Daily Goals - Goal Advancement
         DailyGoalsCard()
-
-        Spacer(Modifier.height(12.dp))
-
         LocationsCard()
-
-        Spacer(Modifier.height(12.dp))
+        BedtimeCard()
         // Select apps
         SelectAppsCard()
     }
