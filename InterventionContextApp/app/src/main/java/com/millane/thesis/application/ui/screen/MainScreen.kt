@@ -6,7 +6,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -51,6 +50,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import com.millane.thesis.application.R
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
+import com.millane.thesis.application.ui.screen.components.RoundedCard
 
 import com.millane.thesis.application.ui.theme.*
 
@@ -309,7 +309,7 @@ fun MainScreen() {
     }
 }
 
-@Composable
+/*@Composable
 private fun RoundedCard(
     background: Color,
     modifier: Modifier = Modifier,
@@ -324,7 +324,7 @@ private fun RoundedCard(
     ) {
         Column(Modifier.padding(20.dp), content = content)
     }
-}
+}*/
 
 @Composable
 private fun AppChoice(
