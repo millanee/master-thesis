@@ -1,4 +1,4 @@
-package com.millane.thesis.application.ui.location
+package com.millane.thesis.application.ui.viewmodels
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -6,7 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.millane.thesis.application.data.datastore.DevDataStoreReset
 import com.millane.thesis.application.data.location.LocationsRepository
 import com.millane.thesis.application.domain.location.LocationEntry
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class LocationsViewModel(app: Application) : AndroidViewModel(app) {
@@ -16,10 +21,10 @@ class LocationsViewModel(app: Application) : AndroidViewModel(app) {
 
     // persisted
     private val persistedLocations: StateFlow<List<LocationEntry>> =
-        repo.locations.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.locations.stateIn(viewModelScope, SharingStarted.Companion.WhileSubscribed(5_000), emptyList())
 
     val isSubmitted: StateFlow<Boolean> =
-        repo.isSubmitted.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+        repo.isSubmitted.stateIn(viewModelScope, SharingStarted.Companion.WhileSubscribed(5_000), false)
 
     // draft (not persisted until submit)
     private val _draftLocations = MutableStateFlow<List<LocationEntry>>(emptyList())

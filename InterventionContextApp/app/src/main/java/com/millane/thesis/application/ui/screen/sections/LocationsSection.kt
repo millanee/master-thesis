@@ -18,7 +18,7 @@ import com.millane.thesis.application.data.datastore.DevDataStoreReset
 import com.millane.thesis.application.domain.location.LocationContextType
 import com.millane.thesis.application.domain.location.LocationEntry
 import com.millane.thesis.application.location.geofence.GeofenceManager
-import com.millane.thesis.application.ui.location.LocationsViewModel
+import com.millane.thesis.application.ui.viewmodels.LocationsViewModel
 import com.millane.thesis.application.ui.location.geocodeAddress
 import com.millane.thesis.application.ui.location.looksLikePostalAddress
 import com.millane.thesis.application.ui.location.reverseGeocode
