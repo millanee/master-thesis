@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.millane.thesis.application.ui.viewmodels.BedtimeViewModel
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
 import com.millane.thesis.application.ui.screen.components.RoundedCard
 import com.millane.thesis.application.ui.theme.*
@@ -16,17 +18,34 @@ import com.millane.thesis.application.ui.theme.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BedtimeCard(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    vm: BedtimeViewModel = viewModel()
 ) {
+    val submitted by vm.isSubmitted.collectAsState()
+    val draftBedtime by vm.draftBedtime.collectAsState()
+
     val timePickerState = rememberTimePickerState(
         initialHour = 22,
         initialMinute = 30,
         is24Hour = true
     )
 
+    // Wenn draft/persisted aus DataStore kommt -> Picker darauf setzen
+    LaunchedEffect(draftBedtime) {
+        val t = draftBedtime ?: return@LaunchedEffect
+        val parts = t.split(":")
+        if (parts.size == 2) {
+            val h = parts[0].toIntOrNull()
+            val m = parts[1].toIntOrNull()
+            if (h != null && m != null) {
+                timePickerState.hour = h
+                timePickerState.minute = m
+            }
+        }
+    }
+
     var showPicker by remember { mutableStateOf(false) }
     var showConfirm by remember { mutableStateOf(false) }
-    var submitted by remember { mutableStateOf(false) }
 
     val bedtimeText = "%02d:%02d".format(timePickerState.hour, timePickerState.minute)
 
@@ -34,11 +53,7 @@ fun BedtimeCard(
         background = CardBackground,
         modifier = modifier.fillMaxWidth()
     ) {
-        Text(
-            text = "Bedtime",
-            fontSize = 34.sp,
-            color = PrimaryText
-        )
+        Text(text = "Bedtime", fontSize = 34.sp, color = PrimaryText)
 
         Spacer(Modifier.height(8.dp))
 
@@ -63,7 +78,7 @@ fun BedtimeCard(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = bedtimeText,
+                    text = draftBedtime ?: bedtimeText,
                     fontSize = 22.sp,
                     color = PrimaryText
                 )
@@ -73,7 +88,7 @@ fun BedtimeCard(
         Spacer(Modifier.height(20.dp))
 
         Button(
-            onClick = { showConfirm = true },
+            onClick = { if (!submitted) showConfirm = true },
             enabled = !submitted,
             modifier = Modifier
                 .fillMaxWidth()
@@ -96,19 +111,12 @@ fun BedtimeCard(
 
     if (showPicker) {
         Dialog(onDismissRequest = { showPicker = false }) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = CardBackground
-            ) {
+            Surface(shape = RoundedCornerShape(20.dp), color = CardBackground) {
                 Column(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(
-                        text = "Select time",
-                        fontSize = 18.sp,
-                        color = PrimaryText
-                    )
+                    Text("Select time", fontSize = 18.sp, color = PrimaryText)
 
                     TimePicker(state = timePickerState)
 
@@ -116,12 +124,13 @@ fun BedtimeCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
                     ) {
-                        TextButton(onClick = { showPicker = false }) {
-                            Text("Cancel")
-                        }
-                        TextButton(onClick = { showPicker = false }) {
-                            Text("OK")
-                        }
+                        TextButton(onClick = { showPicker = false }) { Text("Cancel") }
+                        TextButton(
+                            onClick = {
+                                vm.setDraft(timePickerState.hour, timePickerState.minute)
+                                showPicker = false
+                            }
+                        ) { Text("OK") }
                     }
                 }
             }
@@ -136,7 +145,9 @@ fun BedtimeCard(
             confirmLabel = "Confirm",
             dismissLabel = "Cancel",
             onConfirm = {
-                submitted = true
+                // wichtig: draft auf den aktuell ausgewählten Wert setzen und submitten
+                vm.setDraft(timePickerState.hour, timePickerState.minute)
+                vm.submit()
                 showConfirm = false
             },
             onDismiss = { showConfirm = false }
