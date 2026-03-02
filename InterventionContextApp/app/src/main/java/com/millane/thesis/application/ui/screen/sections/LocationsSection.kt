@@ -13,6 +13,8 @@ import com.millane.thesis.application.domain.location.LocationEntry
 import com.millane.thesis.application.location.geofence.GeofenceManager
 import com.millane.thesis.application.ui.location.LocationsViewModel
 import com.millane.thesis.application.ui.location.geocodeAddress
+import com.millane.thesis.application.ui.location.looksLikePostalAddress
+import com.millane.thesis.application.ui.location.reverseGeocode
 import kotlinx.coroutines.launch
 
 @Composable
@@ -51,6 +53,7 @@ fun LocationsSection(
 
     val geofenceManager = remember { GeofenceManager(context) }
 
+    // Re-register geofences whenever list changes (only if permission granted)
     LaunchedEffect(hasFineLocation, allLocations) {
         if (hasFineLocation) {
             geofenceManager.registerAll(allLocations)
@@ -70,10 +73,23 @@ fun LocationsSection(
                 return@launch
             }
 
+            val resolved = reverseGeocode(context, latLng)
+            if (resolved == null) {
+                helperText = "Could not verify the address. Please try a more precise input."
+                return@launch
+            }
+
+            if (!looksLikePostalAddress(resolved)) {
+                helperText =
+                    "Please enter a real address (Street + City or Postal Code). Detected: ${resolved.formatted}"
+                return@launch
+            }
+
+            // Store normalized address rather than raw user input
             vm.add(
                 LocationEntry(
                     contextType = type,
-                    displayAddress = trimmed,
+                    displayAddress = resolved.formatted,
                     latitude = latLng.lat,
                     longitude = latLng.lng,
                     radiusMeters = if (type == LocationContextType.WORK) 150f else 120f,
@@ -103,12 +119,13 @@ fun LocationsSection(
                 helperText = "Please add at least one WORK and one HOME address."
                 return@LocationsCard
             }
-            // Optional: ask for permission here if you want geofencing to work
+
+            // Optional: ask permission on submit for geofencing to work
             if (!hasFineLocation) {
                 requestFineLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                 helperText = "Grant location permission so the app can detect when you're at WORK/HOME."
             } else {
-                helperText = "Submitted. (Next step: show confirmation dialog + persist to DB)"
+                helperText = "Submitted. (Next step: confirmation dialog + persistence)"
             }
         },
         submitEnabled = canSubmit,
