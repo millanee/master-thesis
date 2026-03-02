@@ -3,33 +3,74 @@ package com.millane.thesis.application.ui.location
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.millane.thesis.application.data.datastore.DevDataStoreReset
 import com.millane.thesis.application.data.location.LocationsRepository
 import com.millane.thesis.application.domain.location.LocationEntry
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 class LocationsViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val repo = LocationsRepository(app.applicationContext)
+    private val appContext = app.applicationContext
+    private val repo = LocationsRepository(appContext)
 
-    val locations: StateFlow<List<LocationEntry>> =
-        repo.locations.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = emptyList()
-        )
+    // persisted
+    private val persistedLocations: StateFlow<List<LocationEntry>> =
+        repo.locations.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun add(entry: LocationEntry) {
+    val isSubmitted: StateFlow<Boolean> =
+        repo.isSubmitted.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    // draft (not persisted until submit)
+    private val _draftLocations = MutableStateFlow<List<LocationEntry>>(emptyList())
+    val draftLocations: StateFlow<List<LocationEntry>> = _draftLocations.asStateFlow()
+
+    init {
+        // When submitted becomes true, draft should reflect persisted (locked state).
         viewModelScope.launch {
-            repo.add(entry)
+            combine(persistedLocations, isSubmitted) { locations, submitted ->
+                Pair(locations, submitted)
+            }.collect { (locations, submitted) ->
+                if (submitted) {
+                    _draftLocations.value = locations
+                } else {
+                    // while not submitted, keep current draft as-is
+                    if (_draftLocations.value.isEmpty()) {
+                        _draftLocations.value = emptyList()
+                    }
+                }
+            }
         }
     }
 
-    fun delete(id: String) {
+    fun addDraft(entry: LocationEntry) {
+        if (isSubmitted.value) return
+        _draftLocations.value = _draftLocations.value + entry
+    }
+
+    fun deleteDraft(id: String) {
+        if (isSubmitted.value) return
+        _draftLocations.value = _draftLocations.value.filterNot { it.id == id }
+    }
+
+    fun submit() {
+        if (isSubmitted.value) return
+        val toSave = _draftLocations.value
         viewModelScope.launch {
-            repo.delete(id)
+            repo.saveAll(toSave)
+            repo.setSubmitted(true)
+        }
+    }
+
+    /**
+     * DEV ONLY:
+     * Clears the ENTIRE app datastore (locations + any future stored data),
+     * and resets draft state.
+     */
+    fun resetForTesting() {
+        viewModelScope.launch {
+            DevDataStoreReset.clearAll(appContext)
+            _draftLocations.value = emptyList()
         }
     }
 }
