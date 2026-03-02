@@ -1,9 +1,12 @@
 package com.millane.thesis.application.domain.location
 
+import kotlinx.serialization.Serializable
 import java.util.UUID
 
+@Serializable
 enum class LocationContextType { WORK, HOME }
 
+@Serializable
 data class LocationEntry(
     val id: String = UUID.randomUUID().toString(),
     val contextType: LocationContextType,
