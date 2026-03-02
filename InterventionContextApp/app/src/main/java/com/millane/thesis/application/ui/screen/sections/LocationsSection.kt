@@ -1,13 +1,20 @@
 package com.millane.thesis.application.ui.screen.sections
 
 import android.Manifest
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.millane.thesis.application.data.datastore.DevDataStoreReset
 import com.millane.thesis.application.domain.location.LocationContextType
 import com.millane.thesis.application.domain.location.LocationEntry
 import com.millane.thesis.application.location.geofence.GeofenceManager
@@ -24,15 +31,17 @@ fun LocationsSection(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val allLocations by vm.locations.collectAsState()
-    val workLocations = allLocations.filter { it.contextType == LocationContextType.WORK }
-    val homeLocations = allLocations.filter { it.contextType == LocationContextType.HOME }
+    val submitted by vm.isSubmitted.collectAsState()
+    val draftLocations by vm.draftLocations.collectAsState()
+
+    val workLocations = draftLocations.filter { it.contextType == LocationContextType.WORK }
+    val homeLocations = draftLocations.filter { it.contextType == LocationContextType.HOME }
 
     var workInput by remember { mutableStateOf("") }
     var homeInput by remember { mutableStateOf("") }
-
     var helperText by remember { mutableStateOf<String?>(null) }
 
+    // Permission (geofencing)
     var hasFineLocation by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -47,20 +56,22 @@ fun LocationsSection(
     ) { granted ->
         hasFineLocation = granted
         helperText = if (!granted) {
-            "Location permission is needed to detect WORK/HOME automatically (geofencing). You can still add addresses."
+            "Location permission is needed to detect WORK/HOME automatically (geofencing)."
         } else null
     }
 
     val geofenceManager = remember { GeofenceManager(context) }
 
-    // Re-register geofences whenever list changes (only if permission granted)
-    LaunchedEffect(hasFineLocation, allLocations) {
-        if (hasFineLocation) {
-            geofenceManager.registerAll(allLocations)
+    // Register geofences ONLY after submit
+    LaunchedEffect(submitted, hasFineLocation, draftLocations) {
+        if (submitted && hasFineLocation) {
+            geofenceManager.registerAll(draftLocations)
         }
     }
 
     fun addLocation(type: LocationContextType, raw: String) {
+        if (submitted) return
+
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) return
 
@@ -85,8 +96,7 @@ fun LocationsSection(
                 return@launch
             }
 
-            // Store normalized address rather than raw user input
-            vm.add(
+            vm.addDraft(
                 LocationEntry(
                     contextType = type,
                     displayAddress = resolved.formatted,
@@ -102,6 +112,37 @@ fun LocationsSection(
         }
     }
 
+    // Debuggable check
+    val isDebuggable =
+        (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+    if (isDebuggable) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        // clears ALL DataStore keys (now + future features)
+                        DevDataStoreReset.clearAll(context)
+
+                        // reset in-memory draft state
+                        vm.resetForTesting()
+
+                        // remove any registered geofences
+                        geofenceManager.clearAll()
+
+                        helperText = "DEV: cleared all stored data."
+                    }
+                }
+            ) {
+                Text("DEV: Reset all data")
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+    }
+
     val canSubmit = workLocations.isNotEmpty() && homeLocations.isNotEmpty()
 
     LocationsCard(
@@ -113,22 +154,26 @@ fun LocationsSection(
         onHomeInputChange = { homeInput = it },
         onAddWork = { addLocation(LocationContextType.WORK, workInput) },
         onAddHome = { addLocation(LocationContextType.HOME, homeInput) },
-        onDelete = { id -> vm.delete(id) },
+        onDelete = { id -> vm.deleteDraft(id) },
         onSubmit = {
+            if (submitted) return@LocationsCard
+
             if (!canSubmit) {
                 helperText = "Please add at least one WORK and one HOME address."
                 return@LocationsCard
             }
 
-            // Optional: ask permission on submit for geofencing to work
             if (!hasFineLocation) {
                 requestFineLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                 helperText = "Grant location permission so the app can detect when you're at WORK/HOME."
-            } else {
-                helperText = "Submitted. (Next step: confirmation dialog + persistence)"
+                return@LocationsCard
             }
+
+            vm.submit()
+            helperText = "Submitted."
         },
         submitEnabled = canSubmit,
+        submitted = submitted,
         helperText = helperText
     )
 }
