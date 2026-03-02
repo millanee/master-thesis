@@ -1,28 +1,51 @@
 package com.millane.thesis.application.data.location
 
+import android.content.Context
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import com.millane.thesis.application.data.datastore.JsonCodec
+import com.millane.thesis.application.data.datastore.appDataStore
 import com.millane.thesis.application.domain.location.LocationContextType
 import com.millane.thesis.application.domain.location.LocationEntry
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
-class LocationsRepository {
+class LocationsRepository(
+    private val context: Context
+) {
+    private val KEY_LOCATIONS_JSON = stringPreferencesKey("locations_json")
 
-    private val _locations = MutableStateFlow<List<LocationEntry>>(emptyList())
-    val locations: StateFlow<List<LocationEntry>> = _locations
+    val locations: Flow<List<LocationEntry>> =
+        context.appDataStore.data.map { prefs ->
+            val raw = prefs[KEY_LOCATIONS_JSON] ?: "[]"
+            runCatching { JsonCodec.decode<List<LocationEntry>>(raw) }
+                .getOrElse { emptyList() }
+        }
 
-    fun getByType(type: LocationContextType): List<LocationEntry> =
-        _locations.value.filter { it.contextType == type }
-
-    fun add(entry: LocationEntry) {
-        _locations.update { it + entry }
+    suspend fun add(entry: LocationEntry) {
+        context.appDataStore.edit { prefs ->
+            val current = readLocations(prefs[KEY_LOCATIONS_JSON])
+            prefs[KEY_LOCATIONS_JSON] = JsonCodec.encode(current + entry)
+        }
     }
 
-    fun delete(id: String) {
-        _locations.update { list -> list.filterNot { it.id == id } }
+    suspend fun delete(id: String) {
+        context.appDataStore.edit { prefs ->
+            val current = readLocations(prefs[KEY_LOCATIONS_JSON])
+            prefs[KEY_LOCATIONS_JSON] = JsonCodec.encode(current.filterNot { it.id == id })
+        }
     }
 
-    fun clearByType(type: LocationContextType) {
-        _locations.update { list -> list.filterNot { it.contextType == type } }
+    suspend fun clearByType(type: LocationContextType) {
+        context.appDataStore.edit { prefs ->
+            val current = readLocations(prefs[KEY_LOCATIONS_JSON])
+            prefs[KEY_LOCATIONS_JSON] = JsonCodec.encode(current.filterNot { it.contextType == type })
+        }
+    }
+
+    private fun readLocations(raw: String?): List<LocationEntry> {
+        val safe = raw ?: "[]"
+        return runCatching { JsonCodec.decode<List<LocationEntry>>(safe) }
+            .getOrElse { emptyList() }
     }
 }
