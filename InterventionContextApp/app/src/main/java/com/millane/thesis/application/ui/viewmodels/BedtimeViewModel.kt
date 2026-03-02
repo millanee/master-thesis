@@ -55,4 +55,12 @@ class BedtimeViewModel(app: Application) : AndroidViewModel(app) {
             repo.setSubmitted(true)
         }
     }
+
+    fun resetForTesting() {
+        viewModelScope.launch {
+            repo.setSubmitted(false)
+            repo.saveBedtime("")
+            _draftBedtime.value = null
+        }
+    }
 }
