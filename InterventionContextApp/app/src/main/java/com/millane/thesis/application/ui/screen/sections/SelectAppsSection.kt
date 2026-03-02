@@ -18,23 +18,22 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.millane.thesis.application.R
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
 import com.millane.thesis.application.ui.screen.components.RoundedCard
 import com.millane.thesis.application.ui.theme.*
-
-private enum class TargetApp { Instagram, TikTok }
-
-private fun <T> Set<T>.toggle(item: T): Set<T> =
-    if (contains(item)) this - item else this + item
+import com.millane.thesis.application.ui.viewmodels.AppSelectionViewModel
 
 @Composable
 fun SelectAppsCard(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    vm: AppSelectionViewModel = viewModel()
 ) {
-    var selectedApps by remember { mutableStateOf(setOf(TargetApp.Instagram, TargetApp.TikTok)) }
+    val submitted by vm.isSubmitted.collectAsState()
+    val selectedApps by vm.draftSelected.collectAsState()
+
     var showConfirmDialog by remember { mutableStateOf(false) }
-    var submitted by remember { mutableStateOf(false) }
 
     RoundedCard(
         background = CardBackground,
@@ -59,17 +58,17 @@ fun SelectAppsCard(
             AppChoice(
                 label = "Instagram",
                 iconRes = R.drawable.instagram_icon,
-                selected = selectedApps.contains(TargetApp.Instagram),
+                selected = selectedApps.contains("Instagram"),
                 enabled = !submitted,
-                onToggle = { selectedApps = selectedApps.toggle(TargetApp.Instagram) }
+                onToggle = { vm.toggle("Instagram") }
             )
 
             AppChoice(
                 label = "TikTok",
                 iconRes = R.drawable.tiktok_icon,
-                selected = selectedApps.contains(TargetApp.TikTok),
+                selected = selectedApps.contains("TikTok"),
                 enabled = !submitted,
-                onToggle = { selectedApps = selectedApps.toggle(TargetApp.TikTok) }
+                onToggle = { vm.toggle("TikTok") }
             )
         }
 
@@ -78,7 +77,7 @@ fun SelectAppsCard(
         val canSubmit = selectedApps.isNotEmpty()
 
         Button(
-            onClick = { showConfirmDialog = true },
+            onClick = { if (!submitted) showConfirmDialog = true },
             enabled = canSubmit && !submitted,
             modifier = Modifier
                 .fillMaxWidth()
@@ -105,17 +104,19 @@ fun SelectAppsCard(
         }
 
         if (showConfirmDialog) {
+            val bullets = buildList {
+                if (selectedApps.contains("Instagram")) add("Instagram")
+                if (selectedApps.contains("TikTok")) add("TikTok")
+            }
+
             ConfirmationAndInterventionDialog(
                 title = "Confirm App Selection",
                 message = "Are you sure you want to\nlimit the following:",
-                bullets = buildList {
-                    if (selectedApps.contains(TargetApp.Instagram)) add("Instagram")
-                    if (selectedApps.contains(TargetApp.TikTok)) add("TikTok")
-                },
+                bullets = bullets,
                 confirmLabel = "Submit",
                 dismissLabel = "Cancel",
                 onConfirm = {
-                    submitted = true
+                    vm.submit() // <- persistiert + lockt
                     showConfirmDialog = false
                 },
                 onDismiss = { showConfirmDialog = false }
