@@ -30,6 +30,7 @@ fun LocationsCard(
     onDelete: (String) -> Unit,
     onSubmit: () -> Unit,
     submitEnabled: Boolean,
+    submitted: Boolean,
     helperText: String? = null,
     modifier: Modifier = Modifier
 ) {
@@ -49,7 +50,8 @@ fun LocationsCard(
             onInputChange = onWorkInputChange,
             onAdd = onAddWork,
             onDelete = onDelete,
-            placeholder = "Add work address…"
+            placeholder = "Add work address…",
+            enabled = !submitted
         )
 
         Spacer(Modifier.height(20.dp))
@@ -63,14 +65,15 @@ fun LocationsCard(
             onInputChange = onHomeInputChange,
             onAdd = onAddHome,
             onDelete = onDelete,
-            placeholder = "Add home address…"
+            placeholder = "Add home address…",
+            enabled = !submitted
         )
 
         Spacer(Modifier.height(20.dp))
 
         Button(
             onClick = onSubmit,
-            enabled = submitEnabled,
+            enabled = submitEnabled && !submitted,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
@@ -82,7 +85,11 @@ fun LocationsCard(
             ),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Text("SUBMIT", fontSize = 18.sp, letterSpacing = 1.sp)
+            Text(
+                text = if (submitted) "SUBMITTED" else "SUBMIT",
+                fontSize = 18.sp,
+                letterSpacing = 1.sp
+            )
         }
 
         if (helperText != null) {
@@ -104,7 +111,8 @@ private fun LocationPanel(
     onInputChange: (String) -> Unit,
     onAdd: () -> Unit,
     onDelete: (String) -> Unit,
-    placeholder: String
+    placeholder: String,
+    enabled: Boolean
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -133,12 +141,13 @@ private fun LocationPanel(
 
                         IconButton(
                             onClick = { onDelete(item.id) },
+                            enabled = enabled,
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
                                 contentDescription = "Delete",
-                                tint = PrimaryText,
+                                tint = if (enabled) PrimaryText else SecondaryText,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -155,6 +164,7 @@ private fun LocationPanel(
                 OutlinedTextField(
                     value = inputValue,
                     onValueChange = onInputChange,
+                    enabled = enabled,
                     placeholder = { Text(placeholder, color = SecondaryText) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
@@ -167,12 +177,12 @@ private fun LocationPanel(
 
                 IconButton(
                     onClick = onAdd,
-                    enabled = inputValue.trim().isNotEmpty()
+                    enabled = enabled && inputValue.trim().isNotEmpty()
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Add",
-                        tint = if (inputValue.trim().isNotEmpty()) PrimaryText else SecondaryText
+                        tint = if (enabled && inputValue.trim().isNotEmpty()) PrimaryText else SecondaryText
                     )
                 }
             }
