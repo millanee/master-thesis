@@ -19,16 +19,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.millane.thesis.application.domain.dailygoals.DailyGoal
 import com.millane.thesis.application.ui.screen.components.RoundedCard
 import com.millane.thesis.application.ui.theme.*
 
 @Composable
 fun DailyGoalsCard(
+    goals: List<DailyGoal>,
+    onAddGoal: (String) -> Unit,
+    onDeleteGoal: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var goalInput by remember { mutableStateOf("") }
-    var goals by remember { mutableStateOf(listOf("Create Figma Design", "Read Book")) } // demo defaults
     val focusManager = LocalFocusManager.current
+
+    val canDelete = goals.size > 1
 
     RoundedCard(
         background = CardBackground,
@@ -41,7 +46,6 @@ fun DailyGoalsCard(
         Text("Set or remove your goals for today", fontSize = 16.sp, color = SecondaryText)
         Spacer(Modifier.height(24.dp))
 
-        // Inner list panel
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = InnerCardBackground,
@@ -72,25 +76,35 @@ fun DailyGoalsCard(
                                 Spacer(Modifier.width(10.dp))
 
                                 Text(
-                                    text = goal,
+                                    text = goal.text,
                                     fontSize = 14.sp,
                                     color = PrimaryText,
                                     modifier = Modifier.weight(1f)
                                 )
 
                                 IconButton(
-                                    onClick = { goals = goals - goal },
+                                    onClick = { onDeleteGoal(goal.id) },
+                                    enabled = canDelete,
                                     modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Delete,
                                         contentDescription = "Delete goal",
-                                        tint = PrimaryText,
+                                        tint = if (canDelete) PrimaryText else SecondaryText,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
                         }
+                    }
+
+                    if (!canDelete) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "At least one goal must remain.",
+                            fontSize = 12.sp,
+                            color = SecondaryText
+                        )
                     }
                 }
             }
@@ -113,7 +127,7 @@ fun DailyGoalsCard(
                     onDone = {
                         val trimmed = goalInput.trim()
                         if (trimmed.isNotEmpty()) {
-                            goals = goals + trimmed
+                            onAddGoal(trimmed)
                             goalInput = ""
                         }
                         focusManager.clearFocus()
@@ -127,7 +141,7 @@ fun DailyGoalsCard(
                 onClick = {
                     val trimmed = goalInput.trim()
                     if (trimmed.isNotEmpty()) {
-                        goals = goals + trimmed
+                        onAddGoal(trimmed)
                         goalInput = ""
                         focusManager.clearFocus()
                     }

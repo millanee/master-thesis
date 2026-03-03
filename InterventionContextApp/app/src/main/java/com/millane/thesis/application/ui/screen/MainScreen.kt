@@ -24,6 +24,7 @@ import com.millane.thesis.application.ui.viewmodels.AppSelectionViewModel
 import com.millane.thesis.application.ui.viewmodels.BedtimeViewModel
 import com.millane.thesis.application.ui.viewmodels.LocationsViewModel
 import kotlinx.coroutines.launch
+import com.millane.thesis.application.ui.viewmodels.DailyGoalsViewModel
 
 @Composable
 fun MainScreen() {
@@ -39,6 +40,9 @@ fun MainScreen() {
     val locationsVm: LocationsViewModel = viewModel()
     val bedtimeVm: BedtimeViewModel = viewModel()
     val appsVm: AppSelectionViewModel = viewModel()
+
+    val dailyGoalsVm: DailyGoalsViewModel = viewModel()
+    val goals by dailyGoalsVm.goals.collectAsState()
 
     Column(
         modifier = Modifier
@@ -83,7 +87,11 @@ fun MainScreen() {
         }
 
         // Daily Goals - Goal Advancement
-        DailyGoalsCard()
+        DailyGoalsCard(
+            goals = goals,
+            onAddGoal = { dailyGoalsVm.addGoal(it) },
+            onDeleteGoal = { dailyGoalsVm.deleteGoal(it) }
+        )
         LocationsSection()
         BedtimeCard()
         SelectAppsCard()
