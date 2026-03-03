@@ -23,6 +23,7 @@ import com.millane.thesis.application.ui.location.geocodeAddress
 import com.millane.thesis.application.ui.location.looksLikePostalAddress
 import com.millane.thesis.application.ui.location.reverseGeocode
 import kotlinx.coroutines.launch
+import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
 
 @Composable
 fun LocationsSection(
@@ -40,6 +41,7 @@ fun LocationsSection(
     var workInput by remember { mutableStateOf("") }
     var homeInput by remember { mutableStateOf("") }
     var helperText by remember { mutableStateOf<String?>(null) }
+    var showSubmitConfirm by remember { mutableStateOf(false) }
 
     // Permission (geofencing)
     var hasFineLocation by remember {
@@ -67,6 +69,10 @@ fun LocationsSection(
         if (submitted && hasFineLocation) {
             geofenceManager.registerAll(draftLocations)
         }
+    }
+
+    LaunchedEffect(submitted) {
+        if (submitted) showSubmitConfirm = false
     }
 
     fun addLocation(type: LocationContextType, raw: String) {
@@ -169,11 +175,41 @@ fun LocationsSection(
                 return@LocationsCard
             }
 
-            vm.submit()
-            helperText = "Submitted."
+            helperText = null
+            showSubmitConfirm = true
         },
         submitEnabled = canSubmit,
         submitted = submitted,
         helperText = helperText
     )
+
+    val confirmationBullets = buildList {
+        if (workLocations.isNotEmpty()) {
+            add("WORK:")
+            workLocations.forEach { add(it.displayAddress) }
+        }
+
+        if (homeLocations.isNotEmpty()) {
+            add("HOME:")
+            homeLocations.forEach { add(it.displayAddress) }
+        }
+    }
+
+    if (showSubmitConfirm) {
+        ConfirmationAndInterventionDialog(
+            title = "Confirm locations",
+            message = "Do you want to submit these locations? After confirming, you can’t edit them anymore.",
+            bullets = confirmationBullets,
+            confirmLabel = "CONFIRM",
+            dismissLabel = "CANCEL",
+            onConfirm = {
+                showSubmitConfirm = false
+                vm.submit()
+                helperText = "Submitted."
+            },
+            onDismiss = {
+                showSubmitConfirm = false
+            }
+        )
+    }
 }

@@ -62,9 +62,16 @@ fun ConfirmationAndInterventionDialog(
                 if (bullets.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         bullets.forEach { b ->
+
+                            val isSectionHeader = b.endsWith(":")
+
                             Row(verticalAlignment = Alignment.Top) {
-                                Text("•", fontSize = 18.sp, color = PrimaryText)
-                                Spacer(Modifier.width(10.dp))
+
+                                if (!isSectionHeader) {
+                                    Text("•", fontSize = 18.sp, color = PrimaryText)
+                                    Spacer(Modifier.width(10.dp))
+                                }
+
                                 Text(
                                     text = b,
                                     fontSize = 18.sp,
