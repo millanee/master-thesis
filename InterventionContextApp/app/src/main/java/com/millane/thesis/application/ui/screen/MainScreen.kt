@@ -25,6 +25,8 @@ import com.millane.thesis.application.ui.viewmodels.BedtimeViewModel
 import com.millane.thesis.application.ui.viewmodels.LocationsViewModel
 import kotlinx.coroutines.launch
 import com.millane.thesis.application.ui.viewmodels.DailyGoalsViewModel
+import com.millane.thesis.application.ui.viewmodels.StudyViewModel
+import com.millane.thesis.application.study.StudyGroup
 
 @Composable
 fun MainScreen() {
@@ -43,6 +45,13 @@ fun MainScreen() {
 
     val dailyGoalsVm: DailyGoalsViewModel = viewModel()
     val goals by dailyGoalsVm.goals.collectAsState()
+
+    val studyVm: StudyViewModel = viewModel()
+    val study by studyVm.snapshot.collectAsState()
+
+    LaunchedEffect(Unit) {
+        studyVm.initIfMissing(defaultGroup = StudyGroup.A)
+    }
 
     Column(
         modifier = Modifier
@@ -85,6 +94,11 @@ fun MainScreen() {
                 modifier = Modifier.weight(1f)
             ) { Text("DEV: RESET") }
         }
+
+        Text("Study participant: ${study.participantId ?: "-"}")
+        Text("Group: ${study.group ?: "-"}")
+        Text("Week: ${study.weekIndex ?: "-"}")
+        Text("Active: ${study.activeIntervention ?: "-"}")
 
         // Daily Goals - Goal Advancement
         DailyGoalsCard(
