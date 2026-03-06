@@ -4,25 +4,30 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import com.millane.thesis.application.data.apps.AppSelectionRepository
 import com.millane.thesis.application.data.datastore.appDataStore
+import com.millane.thesis.application.study.InterventionType
 import com.millane.thesis.application.study.StudyGroup
+import com.millane.thesis.application.study.StudyManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.UUID
-import com.google.firebase.firestore.FirebaseFirestore
-import com.millane.thesis.application.data.study.FirestoreStudyAssignment
-import kotlinx.coroutines.flow.first
 
 class StudyRepository(private val context: Context) {
 
     private object Keys {
         val PARTICIPANT_ID = stringPreferencesKey("study_participant_id")
-        val GROUP = stringPreferencesKey("study_group") // "A", "B", "C"
+        val GROUP = stringPreferencesKey("study_group")
         val START_DATE_MS = longPreferencesKey("study_start_date_ms")
     }
 
-    // Flows (for ViewModel observe)
+    private val assignment = FirestoreStudyAssignment(FirebaseFirestore.getInstance())
+    private val firestore = FirebaseFirestore.getInstance()
+    private val appSelectionRepository = AppSelectionRepository(context)
+
     val participantId: Flow<String?> =
         context.appDataStore.data.map { prefs -> prefs[Keys.PARTICIPANT_ID] }
 
@@ -35,12 +40,9 @@ class StudyRepository(private val context: Context) {
     val startDateMs: Flow<Long?> =
         context.appDataStore.data.map { prefs -> prefs[Keys.START_DATE_MS] }
 
-    private val assignment = FirestoreStudyAssignment(FirebaseFirestore.getInstance())
-
     suspend fun initStudyIfMissing(): Triple<String, StudyGroup, Long> {
         val pid = getOrCreateParticipantId()
 
-        // if start date missing, set now
         setStartDateNowIfMissing()
         val start = startDateMs.first() ?: System.currentTimeMillis()
 
@@ -53,12 +55,28 @@ class StudyRepository(private val context: Context) {
             currentGroup
         }
 
+        syncParticipantTargetAppsToFirestore(pid)
+
         return Triple(pid, finalGroup, start)
     }
 
-    /**
-     * Returns existing id, otherwise generates and stores a new UUID.
-     */
+    suspend fun getCurrentStudySnapshot(): CurrentStudySnapshot? {
+        val pid = participantId.first() ?: return null
+        val grp = group.first() ?: return null
+        val start = startDateMs.first() ?: return null
+
+        val week = StudyManager.weekIndex(start)
+        val intervention = StudyManager.interventionFor(grp, week)
+
+        return CurrentStudySnapshot(
+            participantId = pid,
+            studyGroup = grp,
+            startDateMs = start,
+            studyWeek = week,
+            activeInterventionType = intervention
+        )
+    }
+
     suspend fun getOrCreateParticipantId(): String {
         val prefs = context.appDataStore.data.first()
         val existingId = prefs[Keys.PARTICIPANT_ID]
@@ -75,9 +93,6 @@ class StudyRepository(private val context: Context) {
         }
     }
 
-    /**
-     * Set start date to "now" only if it doesn't exist yet.
-     */
     suspend fun setStartDateNowIfMissing() {
         val prefs = context.appDataStore.data.first()
         if (prefs[Keys.START_DATE_MS] != null) return
@@ -91,4 +106,23 @@ class StudyRepository(private val context: Context) {
             prefs[Keys.START_DATE_MS] = value
         }
     }
+
+    suspend fun syncParticipantTargetAppsToFirestore(participantId: String) {
+        val selectedApps = appSelectionRepository.selectedApps.first().toList()
+
+        firestore.collection("participants")
+            .document(participantId)
+            .set(
+                mapOf("targetApps" to selectedApps),
+                SetOptions.merge()
+            )
+    }
 }
+
+data class CurrentStudySnapshot(
+    val participantId: String,
+    val studyGroup: StudyGroup,
+    val startDateMs: Long,
+    val studyWeek: Int,
+    val activeInterventionType: InterventionType
+)
