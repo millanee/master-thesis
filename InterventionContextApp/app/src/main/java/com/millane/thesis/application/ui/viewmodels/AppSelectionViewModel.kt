@@ -3,8 +3,14 @@ package com.millane.thesis.application.ui.viewmodels
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.millane.thesis.application.apps.TargetApps
 import com.millane.thesis.application.data.apps.AppSelectionRepository
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class AppSelectionViewModel(app: Application) : AndroidViewModel(app) {
@@ -29,27 +35,33 @@ class AppSelectionViewModel(app: Application) : AndroidViewModel(app) {
                 if (submitted) {
                     _draftSelected.value = persisted
                 } else {
-                    // initial draft = persisted (if any). If none stored, default = both apps.
+                    // initial draft = persisted (if any). If none stored, default = both target apps.
                     if (_draftSelected.value.isEmpty()) {
                         _draftSelected.value =
-                            if (persisted.isNotEmpty()) persisted else setOf("Instagram", "TikTok")
+                            if (persisted.isNotEmpty()) persisted else TargetApps.all
                     }
                 }
             }
         }
     }
 
-    fun toggle(appName: String) {
+    fun toggle(appPackage: String) {
         if (isSubmitted.value) return
+
         _draftSelected.value =
-            if (_draftSelected.value.contains(appName)) _draftSelected.value - appName
-            else _draftSelected.value + appName
+            if (_draftSelected.value.contains(appPackage)) {
+                _draftSelected.value - appPackage
+            } else {
+                _draftSelected.value + appPackage
+            }
     }
 
     fun submit() {
         if (isSubmitted.value) return
+
         val toSave = _draftSelected.value
         if (toSave.isEmpty()) return
+
         viewModelScope.launch {
             repo.saveSelectedApps(toSave)
             repo.setSubmitted(true)
