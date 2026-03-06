@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.UUID
+import com.google.firebase.firestore.FirebaseFirestore
+import com.millane.thesis.application.data.study.FirestoreStudyAssignment
+import kotlinx.coroutines.flow.first
 
 class StudyRepository(private val context: Context) {
 
@@ -31,6 +34,27 @@ class StudyRepository(private val context: Context) {
 
     val startDateMs: Flow<Long?> =
         context.appDataStore.data.map { prefs -> prefs[Keys.START_DATE_MS] }
+
+    private val assignment = FirestoreStudyAssignment(FirebaseFirestore.getInstance())
+
+    suspend fun initStudyIfMissing(): Triple<String, StudyGroup, Long> {
+        val pid = getOrCreateParticipantId()
+
+        // if start date missing, set now
+        setStartDateNowIfMissing()
+        val start = startDateMs.first() ?: System.currentTimeMillis()
+
+        val currentGroup = group.first()
+        val finalGroup = if (currentGroup == null) {
+            val g = assignment.assignGroup(pid, start)
+            setGroup(g)
+            g
+        } else {
+            currentGroup
+        }
+
+        return Triple(pid, finalGroup, start)
+    }
 
     /**
      * Returns existing id, otherwise generates and stores a new UUID.

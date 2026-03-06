@@ -26,7 +26,6 @@ import com.millane.thesis.application.ui.viewmodels.LocationsViewModel
 import kotlinx.coroutines.launch
 import com.millane.thesis.application.ui.viewmodels.DailyGoalsViewModel
 import com.millane.thesis.application.ui.viewmodels.StudyViewModel
-import com.millane.thesis.application.study.StudyGroup
 
 @Composable
 fun MainScreen() {
@@ -50,7 +49,7 @@ fun MainScreen() {
     val study by studyVm.snapshot.collectAsState()
 
     LaunchedEffect(Unit) {
-        studyVm.initIfMissing(defaultGroup = StudyGroup.A)
+        studyVm.initIfMissing()
     }
 
     Column(

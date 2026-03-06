@@ -42,12 +42,9 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StudySnapshot())
 
-    fun initIfMissing(defaultGroup: StudyGroup = StudyGroup.A) {
+    fun initIfMissing() {
         viewModelScope.launch {
-            repo.getOrCreateParticipantId()
-            // set defaults only if missing
-            if (snapshot.value.group == null) repo.setGroup(defaultGroup)
-            repo.setStartDateNowIfMissing()
+            repo.initStudyIfMissing()
         }
     }
 
