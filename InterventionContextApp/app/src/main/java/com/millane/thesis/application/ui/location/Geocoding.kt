@@ -52,7 +52,7 @@ suspend fun geocodeAddress(context: Context, query: String): LatLng? {
 }
 
 /**
- * Reverse geocoding: lat/lng -> structured postal-ish address info.
+ * Reverse geocoding: lat/lng -> structured address info
  */
 suspend fun reverseGeocode(context: Context, latLng: LatLng): ResolvedAddress? {
     val geocoder = Geocoder(context, Locale.getDefault())
@@ -73,14 +73,7 @@ suspend fun reverseGeocode(context: Context, latLng: LatLng): ResolvedAddress? {
 
         val a = results.firstOrNull() ?: return null
 
-        val formatted = a.getAddressLine(0)
-            ?: listOfNotNull(
-                a.thoroughfare,
-                a.subThoroughfare,
-                a.postalCode,
-                a.locality ?: a.subAdminArea,
-                a.countryName
-            ).joinToString(", ")
+        val formatted = buildDisplayAddress(a, latLng)
 
         ResolvedAddress(
             formatted = formatted,
@@ -97,18 +90,22 @@ suspend fun reverseGeocode(context: Context, latLng: LatLng): ResolvedAddress? {
     }
 }
 
-/**
- * Heuristic validator: accept only "postal-ish" results.
- * Rule: accept if at least 2 out of 3 are present:
- *  - city
- *  - postal code
- *  - street
- */
-fun looksLikePostalAddress(r: ResolvedAddress): Boolean {
-    val hasCity = !r.city.isNullOrBlank()
-    val hasPostal = !r.postalCode.isNullOrBlank()
-    val hasStreet = !r.street.isNullOrBlank()
+private fun buildDisplayAddress(a: Address, latLng: LatLng): String {
+    val addressLine = a.getAddressLine(0)
+    if (!addressLine.isNullOrBlank()) return addressLine
 
-    val score = listOf(hasCity, hasPostal, hasStreet).count { it }
-    return score >= 2
+    val fallbackParts = listOfNotNull(
+        a.featureName,
+        a.subLocality,
+        a.locality ?: a.subAdminArea,
+        a.countryName
+    )
+        .distinct()
+        .filter { it.isNotBlank() }
+
+    if (fallbackParts.isNotEmpty()) {
+        return fallbackParts.joinToString(", ")
+    }
+
+    return "${latLng.lat}, ${latLng.lng}"
 }

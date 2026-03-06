@@ -5,10 +5,21 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -18,12 +29,11 @@ import com.millane.thesis.application.data.datastore.DevDataStoreReset
 import com.millane.thesis.application.domain.location.LocationContextType
 import com.millane.thesis.application.domain.location.LocationEntry
 import com.millane.thesis.application.location.geofence.GeofenceManager
-import com.millane.thesis.application.ui.viewmodels.LocationsViewModel
-import com.millane.thesis.application.ui.location.geocodeAddress
-import com.millane.thesis.application.ui.location.looksLikePostalAddress
-import com.millane.thesis.application.ui.location.reverseGeocode
-import kotlinx.coroutines.launch
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
+import com.millane.thesis.application.ui.location.geocodeAddress
+import com.millane.thesis.application.ui.location.reverseGeocode
+import com.millane.thesis.application.ui.viewmodels.LocationsViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun LocationsSection(
@@ -43,7 +53,6 @@ fun LocationsSection(
     var helperText by remember { mutableStateOf<String?>(null) }
     var showSubmitConfirm by remember { mutableStateOf(false) }
 
-    // Permission (geofencing)
     var hasFineLocation by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -59,12 +68,13 @@ fun LocationsSection(
         hasFineLocation = granted
         helperText = if (!granted) {
             "Location permission is needed to detect WORK/HOME automatically (geofencing)."
-        } else null
+        } else {
+            null
+        }
     }
 
     val geofenceManager = remember { GeofenceManager(context) }
 
-    // Register geofences ONLY after submit
     LaunchedEffect(submitted, hasFineLocation, draftLocations) {
         if (submitted && hasFineLocation) {
             geofenceManager.registerAll(draftLocations)
@@ -81,31 +91,22 @@ fun LocationsSection(
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) return
 
-        helperText = "Searching address…"
+        helperText = "Searching location…"
 
         scope.launch {
             val latLng = geocodeAddress(context, trimmed)
             if (latLng == null) {
-                helperText = "Could not find this address. Try adding city/zip code."
+                helperText = "Could not find this location. Try a more specific input."
                 return@launch
             }
 
             val resolved = reverseGeocode(context, latLng)
-            if (resolved == null) {
-                helperText = "Could not verify the address. Please try a more precise input."
-                return@launch
-            }
-
-            if (!looksLikePostalAddress(resolved)) {
-                helperText =
-                    "Please enter a real address (Street + City or Postal Code). Detected: ${resolved.formatted}"
-                return@launch
-            }
+            val displayAddress = resolved?.formatted ?: trimmed
 
             vm.addDraft(
                 LocationEntry(
                     contextType = type,
-                    displayAddress = resolved.formatted,
+                    displayAddress = displayAddress,
                     latitude = latLng.lat,
                     longitude = latLng.lng,
                     radiusMeters = if (type == LocationContextType.WORK) 150f else 120f,
@@ -114,11 +115,15 @@ fun LocationsSection(
             )
 
             helperText = null
-            if (type == LocationContextType.WORK) workInput = "" else homeInput = ""
+
+            if (type == LocationContextType.WORK) {
+                workInput = ""
+            } else {
+                homeInput = ""
+            }
         }
     }
 
-    // Debuggable check
     val isDebuggable =
         (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
@@ -130,15 +135,9 @@ fun LocationsSection(
             OutlinedButton(
                 onClick = {
                     scope.launch {
-                        // clears ALL DataStore keys (now + future features)
                         DevDataStoreReset.clearAll(context)
-
-                        // reset in-memory draft state
                         vm.resetForTesting()
-
-                        // remove any registered geofences
                         geofenceManager.clearAll()
-
                         helperText = "DEV: cleared all stored data."
                     }
                 }
@@ -165,7 +164,7 @@ fun LocationsSection(
             if (submitted) return@LocationsCard
 
             if (!canSubmit) {
-                helperText = "Please add at least one WORK and one HOME address."
+                helperText = "Please add at least one WORK and one HOME location."
                 return@LocationsCard
             }
 
