@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.millane.thesis.application.study.SessionManager
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
+import com.millane.thesis.application.ui.components.ReactanceScaleDialog
 import com.millane.thesis.application.ui.theme.InterventionContextAppTheme
 import kotlinx.coroutines.delay
 
@@ -36,13 +37,18 @@ class FrictionActivity : ComponentActivity() {
     @Volatile
     private var userChoiceMade = false
 
+    /** When true, user left via Home while intervention was active; show only reactance dialog when they return. */
+    private val showReactanceFromHomeState = mutableStateOf(false)
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // User pressed home or switched app; treat as intervention accepted (no targeted app opened).
+        // User pressed home or switched app; treat as intervention accepted. Show reactance when they return.
         if (!userChoiceMade) {
             userChoiceMade = true
-            Log.d("FrictionActivity", "User left screen without choosing; treating as close app")
-            navigateHomeAndClose()
+            Log.d("FrictionActivity", "User left screen without choosing; will show reactance on return")
+            sessionManager.markClosedViaIntervention()
+            showReactanceFromHomeState.value = true
+            // Do NOT navigate or finish; activity stays in background so we can show reactance on resume.
         }
     }
 
@@ -68,17 +74,18 @@ class FrictionActivity : ComponentActivity() {
         setContent {
             InterventionContextAppTheme {
                 FrictionCountdownScreen(
-                    onCloseApp = {
-                        if (!userChoiceMade) {
-                            userChoiceMade = true
-                            navigateHomeAndClose()
-                        }
+                    targetPackage = targetPackage,
+                    showReactanceFromHome = showReactanceFromHomeState.value,
+                    onChoiceMade = {
+                        if (!userChoiceMade) userChoiceMade = true
                     },
-                    onProceed = {
-                        if (!userChoiceMade) {
-                            userChoiceMade = true
-                            launchTargetAppAndFinish(targetPackage)
-                        }
+                    onReactanceSubmittedGoHome = { responses ->
+                        sessionManager.saveReactanceResponses(responses)
+                        navigateHomeAndClose()
+                    },
+                    onReactanceSubmittedLaunchTarget = { responses, pkg ->
+                        sessionManager.saveReactanceResponses(responses)
+                        launchTargetAppAndFinish(pkg)
                     }
                 )
             }
@@ -92,12 +99,61 @@ class FrictionActivity : ComponentActivity() {
 
 @Composable
 private fun FrictionCountdownScreen(
+    targetPackage: String,
+    showReactanceFromHome: Boolean,
+    onChoiceMade: () -> Unit,
+    onReactanceSubmittedGoHome: (List<Int>) -> Unit,
+    onReactanceSubmittedLaunchTarget: (List<Int>, String) -> Unit,
     totalSeconds: Int = 6,
-    onCloseApp: () -> Unit,
-    onProceed: () -> Unit,
 ) {
     var secondsLeft by rememberSaveable { mutableStateOf(totalSeconds) }
     var showDecisionDialog by rememberSaveable { mutableStateOf(false) }
+    var showReactanceDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingGoHome by rememberSaveable { mutableStateOf(false) }
+    var pendingLaunchPackage by rememberSaveable { mutableStateOf<String?>(null) }
+    var reactanceSelections by rememberSaveable { mutableStateOf(listOf<Int?>(null, null, null, null, null)) }
+
+    // User left via Home: show only reactance dialog (no countdown, no decision).
+    if (showReactanceFromHome) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {}
+        ReactanceScaleDialog(
+            selectedPerItem = reactanceSelections,
+            onSelectionChange = { index, value ->
+                reactanceSelections = reactanceSelections.toMutableList().apply { set(index, value) }
+            },
+            onSubmit = { onReactanceSubmittedGoHome(it) }
+        )
+        return
+    }
+
+    // After user chose Close app or Proceed: show reactance dialog, then navigate on submit.
+    if (showReactanceDialog) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {}
+        ReactanceScaleDialog(
+            selectedPerItem = reactanceSelections,
+            onSelectionChange = { index, value ->
+                reactanceSelections = reactanceSelections.toMutableList().apply { set(index, value) }
+            },
+            onSubmit = { responses ->
+                if (pendingGoHome) {
+                    onReactanceSubmittedGoHome(responses)
+                } else {
+                    onReactanceSubmittedLaunchTarget(responses, pendingLaunchPackage ?: targetPackage)
+                }
+            }
+        )
+        return
+    }
 
     LaunchedEffect(secondsLeft) {
         if (secondsLeft > 0) {
@@ -110,9 +166,11 @@ private fun FrictionCountdownScreen(
 
     BackHandler {
         if (showDecisionDialog) {
-            onProceed()
+            onChoiceMade()
+            pendingGoHome = false
+            pendingLaunchPackage = targetPackage
+            showReactanceDialog = true
         }
-        // During the countdown (before the dialog), back is ignored.
     }
 
     Box(
@@ -134,8 +192,18 @@ private fun FrictionCountdownScreen(
             message = "You opened a targeted app. Do you want to close it or proceed?",
             confirmLabel = "Close app",
             dismissLabel = "Proceed",
-            onConfirm = { onCloseApp() },
-            onDismiss = { onProceed() },
+            onConfirm = {
+                onChoiceMade()
+                pendingGoHome = true
+                pendingLaunchPackage = null
+                showReactanceDialog = true
+            },
+            onDismiss = {
+                onChoiceMade()
+                pendingGoHome = false
+                pendingLaunchPackage = targetPackage
+                showReactanceDialog = true
+            },
             dismissOnClickOutside = false
         )
     }
