@@ -154,17 +154,23 @@ private fun FrictionActivity.navigateHomeAndClose() {
 
 private fun FrictionActivity.launchTargetAppAndFinish(targetPackage: String) {
     sessionManager.markDesignFrictionDismissed()
-    if (targetPackage.isNotEmpty()) {
-        val launchIntent = packageManager.getLaunchIntentForPackage(targetPackage)
+    // Never launch ourselves; target must be the app the user originally intended to open (e.g. Instagram).
+    val packageToLaunch = targetPackage.takeIf { it.isNotEmpty() && it != packageName }
+    if (packageToLaunch != null) {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageToLaunch)
         if (launchIntent != null) {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            launchIntent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
             try {
                 startActivity(launchIntent)
             } catch (e: Exception) {
-                Log.e("FrictionActivity", "Failed to launch target app: $targetPackage", e)
+                Log.e("FrictionActivity", "Failed to launch target app: $packageToLaunch", e)
             }
         } else {
-            Log.w("FrictionActivity", "No launch intent for package: $targetPackage")
+            Log.w("FrictionActivity", "No launch intent for package: $packageToLaunch (check <queries> on Android 11+)")
         }
     }
     // Remove our app from the task so the user sees the target app (e.g. Instagram), not our app.
