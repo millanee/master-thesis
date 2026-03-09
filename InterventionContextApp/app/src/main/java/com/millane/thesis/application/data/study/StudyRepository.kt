@@ -7,7 +7,10 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.millane.thesis.application.data.apps.AppSelectionRepository
+import com.millane.thesis.application.data.bedtime.BedtimeRepository
 import com.millane.thesis.application.data.datastore.appDataStore
+import com.millane.thesis.application.data.location.LocationsRepository
+import com.millane.thesis.application.domain.location.LocationContextType
 import com.millane.thesis.application.study.InterventionType
 import com.millane.thesis.application.study.StudyGroup
 import com.millane.thesis.application.study.StudyManager
@@ -27,6 +30,8 @@ class StudyRepository(private val context: Context) {
     private val assignment = FirestoreStudyAssignment(FirebaseFirestore.getInstance())
     private val firestore = FirebaseFirestore.getInstance()
     private val appSelectionRepository = AppSelectionRepository(context)
+    private val locationsRepository = LocationsRepository(context)
+    private val bedtimeRepository = BedtimeRepository(context)
 
     val participantId: Flow<String?> =
         context.appDataStore.data.map { prefs -> prefs[Keys.PARTICIPANT_ID] }
@@ -40,15 +45,40 @@ class StudyRepository(private val context: Context) {
     val startDateMs: Flow<Long?> =
         context.appDataStore.data.map { prefs -> prefs[Keys.START_DATE_MS] }
 
-    suspend fun initStudyIfMissing(): Triple<String, StudyGroup, Long> {
+    /**
+     * True when app selection is submitted, locations are submitted with at least one
+     * home and one work location, and bedtime is submitted.
+     */
+    suspend fun isOnboardingComplete(): Boolean {
+        if (!appSelectionRepository.isSubmitted.first()) return false
+        if (!locationsRepository.isSubmitted.first()) return false
+        if (!bedtimeRepository.isSubmitted.first()) return false
+        val locations = locationsRepository.locations.first()
+        val hasHome = locations.any { it.contextType == LocationContextType.HOME }
+        val hasWork = locations.any { it.contextType == LocationContextType.WORK }
+        return hasHome && hasWork
+    }
+
+    suspend fun initStudyIfMissing(): Triple<String, StudyGroup?, Long?> {
         val pid = getOrCreateParticipantId()
 
-        setStartDateNowIfMissing()
-        val start = startDateMs.first() ?: System.currentTimeMillis()
+        if (!isOnboardingComplete()) {
+            syncParticipantTargetAppsToFirestore(pid)
+            return Triple(pid, null, null)
+        }
+
+        val start = startDateMs.first()
+        val startToUse = if (start == null) {
+            val now = System.currentTimeMillis()
+            setStartDateMs(now)
+            now
+        } else {
+            start
+        }
 
         val currentGroup = group.first()
         val finalGroup = if (currentGroup == null) {
-            val g = assignment.assignGroup(pid, start)
+            val g = assignment.assignGroup(pid, startToUse)
             setGroup(g)
             g
         } else {
@@ -57,7 +87,7 @@ class StudyRepository(private val context: Context) {
 
         syncParticipantTargetAppsToFirestore(pid)
 
-        return Triple(pid, finalGroup, start)
+        return Triple(pid, finalGroup, startToUse)
     }
 
     suspend fun getCurrentStudySnapshot(): CurrentStudySnapshot? {
@@ -91,14 +121,6 @@ class StudyRepository(private val context: Context) {
         context.appDataStore.edit { prefs ->
             prefs[Keys.GROUP] = group.name
         }
-    }
-
-    suspend fun setStartDateNowIfMissing() {
-        val prefs = context.appDataStore.data.first()
-        if (prefs[Keys.START_DATE_MS] != null) return
-
-        val now = System.currentTimeMillis()
-        context.appDataStore.edit { it[Keys.START_DATE_MS] = now }
     }
 
     suspend fun setStartDateMs(value: Long) {
