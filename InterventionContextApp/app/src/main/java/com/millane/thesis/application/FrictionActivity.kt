@@ -135,7 +135,8 @@ private fun FrictionCountdownScreen(
             confirmLabel = "Close app",
             dismissLabel = "Proceed",
             onConfirm = { onCloseApp() },
-            onDismiss = { onProceed() }
+            onDismiss = { onProceed() },
+            dismissOnClickOutside = false
         )
     }
 }

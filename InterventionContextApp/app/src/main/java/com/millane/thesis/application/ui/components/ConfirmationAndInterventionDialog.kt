@@ -25,13 +25,15 @@ fun ConfirmationAndInterventionDialog(
     dismissLabel: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    /** When false, tapping outside the dialog does nothing (dialog stays open). Default true for backward compatibility. */
+    dismissOnClickOutside: Boolean = true,
     // styling knobs for reuse
     containerColor: Color = Color(0xFFF6EDED),
     borderColor: Color = Color(0xFFE6A7A7),
     confirmButtonColor: Color = Color(0xFFBFEA8B),
     dismissButtonColor: Color = Color(0xFFE8B8B8),
 ) {
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = { if (dismissOnClickOutside) onDismiss() }) {
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = containerColor,
