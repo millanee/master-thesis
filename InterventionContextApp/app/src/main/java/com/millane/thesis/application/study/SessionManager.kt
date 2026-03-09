@@ -1,8 +1,12 @@
 package com.millane.thesis.application.study
 
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresApi
 import com.google.firebase.firestore.FirebaseFirestore
+import com.millane.thesis.application.FrictionActivity
 import com.millane.thesis.application.data.apps.AppSelectionRepository
 import com.millane.thesis.application.data.bedtime.BedtimeRepository
 import com.millane.thesis.application.data.dailygoals.DailyGoalsRepository
@@ -33,10 +37,24 @@ class SessionManager(
     private var activeSessionId: String? = null
     private var activeApp: String? = null
 
+    @Volatile
+    private var designFrictionShownForCurrentSession: Boolean = false
+
+    /** True from when we start FrictionActivity until it calls markDesignFrictionShown(); prevents double launch. */
+    @Volatile
+    private var designFrictionLaunchInProgress: Boolean = false
+
+    @RequiresApi(Build.VERSION_CODES.O)
     fun onForegroundAppChanged(packageName: String) {
         CoroutineScope(Dispatchers.IO).launch {
             sessionMutex.withLock {
                 Log.d("SESSION", "Foreground app changed: $packageName")
+
+                // Don't end session when our app comes to foreground (e.g. FrictionActivity).
+                if (packageName == context.packageName) {
+                    Log.d("SESSION", "Foreground is our app, keeping session alive")
+                    return@withLock
+                }
 
                 val appsSubmitted = appsRepo.isSubmitted.first()
                 val locationsSubmitted = locationsRepo.isSubmitted.first()
@@ -60,7 +78,6 @@ class SessionManager(
                     return@withLock
                 }
 
-                // Wenn für genau diese App schon eine Session läuft -> nichts tun
                 if (activeSessionId != null && activeApp == packageName) {
                     Log.d("SESSION", "session already active for app = $packageName")
                     return@withLock
@@ -70,6 +87,10 @@ class SessionManager(
                 val goals = goalsRepo.goals.first()
                 val submittedLocations = locationsRepo.locations.first()
                 val activeGeofences = GeofenceContextStore.activeGeofenceIds.value
+                val snapshot = studyRepo.getCurrentStudySnapshot() ?: run {
+                    endSessionIfRunningLocked()
+                    return@withLock
+                }
 
                 Log.d("SESSION", "bedtimeStart = $bedtimeStart")
                 Log.d("SESSION", "active geofences = $activeGeofences")
@@ -91,37 +112,104 @@ class SessionManager(
                 startSessionLocked(
                     packageName = packageName,
                     ctx = detectedContext,
-                    goalsCount = goals.size
+                    goalsCount = goals.size,
+                    activeInterventionType = snapshot.activeInterventionType
                 )
             }
+        }
+    }
+
+    fun currentSessionId(): String? = activeSessionId
+
+    fun shouldShowDesignFriction(): Boolean {
+        return activeSessionId != null && !designFrictionShownForCurrentSession
+    }
+
+    fun markDesignFrictionShown() {
+        val sessionId = activeSessionId ?: return
+        if (designFrictionShownForCurrentSession) {
+            designFrictionLaunchInProgress = false
+            return
+        }
+
+        designFrictionShownForCurrentSession = true
+        designFrictionLaunchInProgress = false
+
+        CoroutineScope(Dispatchers.IO).launch {
+            sessionRepo.addInterventionShown(
+                sessionId = sessionId,
+                shownAtMs = System.currentTimeMillis()
+            )
+            Log.d("SESSION", "design friction shown for session=$sessionId")
+        }
+    }
+
+    fun markDesignFrictionDismissed() {
+        val sessionId = activeSessionId ?: return
+
+        CoroutineScope(Dispatchers.IO).launch {
+            sessionRepo.markLatestInterventionDismissed(
+                sessionId = sessionId,
+                dismissedAtMs = System.currentTimeMillis()
+            )
+            Log.d("SESSION", "design friction dismissed for session=$sessionId")
+        }
+    }
+
+    fun markClosedViaIntervention() {
+        val sessionId = activeSessionId ?: return
+
+        CoroutineScope(Dispatchers.IO).launch {
+            sessionRepo.markLatestInterventionClosedApp(
+                sessionId = sessionId,
+                closedAtMs = System.currentTimeMillis()
+            )
+            Log.d("SESSION", "app closed via intervention for session=$sessionId")
+        }
+    }
+
+    fun saveReactanceResponses(responses: List<Int>) {
+        val sessionId = activeSessionId ?: return
+
+        CoroutineScope(Dispatchers.IO).launch {
+            sessionRepo.saveLatestReactanceResponses(
+                sessionId = sessionId,
+                responses = responses,
+                answeredAtMs = System.currentTimeMillis()
+            )
+            Log.d("SESSION", "saved reactance for session=$sessionId responses=$responses")
         }
     }
 
     private suspend fun startSessionLocked(
         packageName: String,
         ctx: DetectedContext,
-        goalsCount: Int
+        goalsCount: Int,
+        activeInterventionType: InterventionType
     ) {
         if (activeSessionId != null && activeApp == packageName) {
             Log.d("SESSION", "start skipped because session is already active for $packageName")
             return
         }
 
-        val snapshot = studyRepo.getCurrentStudySnapshot() ?: return
-
         val record = SessionRecord(
-            participantId = snapshot.participantId,
+            participantId = studyRepo.getCurrentStudySnapshot()?.participantId ?: return,
             targetAppPackage = packageName,
             openedAtMs = System.currentTimeMillis(),
-            studyGroup = snapshot.studyGroup,
-            studyWeek = snapshot.studyWeek,
-            activeInterventionType = snapshot.activeInterventionType,
+            studyGroup = studyRepo.getCurrentStudySnapshot()?.studyGroup ?: return,
+            studyWeek = studyRepo.getCurrentStudySnapshot()?.studyWeek ?: return,
+            activeInterventionType = activeInterventionType,
             detectedContextAtStart = ContextDetector.toLocationContextType(ctx),
             goalsCountAtSessionStart = goalsCount
         )
 
         activeSessionId = record.sessionId
         activeApp = packageName
+        designFrictionShownForCurrentSession = false
+
+        if (activeInterventionType == InterventionType.DESIGN_FRICTION) {
+            maybeLaunchDesignFriction()
+        }
 
         try {
             sessionRepo.createSession(record)
@@ -129,6 +217,8 @@ class SessionManager(
         } catch (e: Exception) {
             activeSessionId = null
             activeApp = null
+            designFrictionShownForCurrentSession = false
+            designFrictionLaunchInProgress = false
             Log.e("SESSION", "failed to start session for $packageName", e)
         }
     }
@@ -148,6 +238,23 @@ class SessionManager(
         } finally {
             activeSessionId = null
             activeApp = null
+            designFrictionShownForCurrentSession = false
+            designFrictionLaunchInProgress = false
         }
+    }
+
+    private fun maybeLaunchDesignFriction() {
+        if (!shouldShowDesignFriction() || designFrictionLaunchInProgress) return
+        val targetPackage = activeApp ?: return
+
+        // Prevent a second FrictionActivity if accessibility events fire again before onCreate runs.
+        designFrictionLaunchInProgress = true
+
+        val intent = Intent(context, FrictionActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra(FrictionActivity.EXTRA_TARGET_PACKAGE, targetPackage)
+        }
+
+        context.startActivity(intent)
     }
 }

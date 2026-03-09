@@ -108,6 +108,39 @@ class FirestoreSessionRepository(
         ).await()
     }
 
+    suspend fun saveLatestReactanceResponses(
+        sessionId: String,
+        responses: List<Int>,
+        answeredAtMs: Long
+    ) {
+        val doc = sessionsCol.document(sessionId)
+        val snap = doc.get().await()
+
+        val currentAttempts = parseAttempts(snap.get("interventionAttempts"))
+        if (currentAttempts.isEmpty()) return
+
+        val lastIndex = currentAttempts.lastIndex
+        val updated = currentAttempts.toMutableList()
+        val last = updated[lastIndex]
+
+        val mean = if (responses.isNotEmpty()) {
+            responses.average()
+        } else {
+            null
+        }
+
+        updated[lastIndex] = last.copy(
+            reactanceAnsweredAtMs = answeredAtMs,
+            reactanceResponses = responses,
+            reactanceMeanScore = mean
+        )
+
+        doc.set(
+            mapOf("interventionAttempts" to updated),
+            SetOptions.merge()
+        ).await()
+    }
+
     suspend fun setContextValidationStatus(
         sessionId: String,
         status: ContextValidationStatus
@@ -132,11 +165,24 @@ class FirestoreSessionRepository(
             val appClosedViaInterventionAtMs =
                 (map["appClosedViaInterventionAtMs"] as? Number)?.toLong()
 
+            val reactanceAnsweredAtMs =
+                (map["reactanceAnsweredAtMs"] as? Number)?.toLong()
+
+            val reactanceResponses =
+                (map["reactanceResponses"] as? List<*>)?.mapNotNull { (it as? Number)?.toInt() }
+                    ?: emptyList()
+
+            val reactanceMeanScore =
+                (map["reactanceMeanScore"] as? Number)?.toDouble()
+
             InterventionAttempt(
                 shownAtMs = shownAtMs,
                 dismissedAtMs = dismissedAtMs,
                 appClosedViaIntervention = appClosedViaIntervention,
-                appClosedViaInterventionAtMs = appClosedViaInterventionAtMs
+                appClosedViaInterventionAtMs = appClosedViaInterventionAtMs,
+                reactanceAnsweredAtMs = reactanceAnsweredAtMs,
+                reactanceResponses = reactanceResponses,
+                reactanceMeanScore = reactanceMeanScore
             )
         }
     }

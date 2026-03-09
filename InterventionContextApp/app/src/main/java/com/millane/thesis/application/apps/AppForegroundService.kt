@@ -9,12 +9,12 @@ import com.millane.thesis.application.study.SessionManager
 
 class AppForegroundService : AccessibilityService() {
 
-    private lateinit var sessionManager: SessionManager
+    private val sessionManager: SessionManager
+        get() = (applicationContext as com.millane.thesis.application.ThesisApp).sessionManager
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.d("ACCESSIBILITY", "SERVICE CONNECTED")
-        sessionManager = SessionManager(applicationContext)
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
