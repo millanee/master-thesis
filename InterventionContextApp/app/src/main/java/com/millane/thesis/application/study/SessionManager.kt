@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 class SessionManager(
     private val context: Context
@@ -208,7 +209,10 @@ class SessionManager(
         designFrictionShownForCurrentSession = false
 
         if (activeInterventionType == InterventionType.DESIGN_FRICTION) {
-            maybeLaunchDesignFriction()
+            // Launch on main thread immediately so the friction screen appears before Instagram is visible.
+            withContext(Dispatchers.Main.immediate) {
+                maybeLaunchDesignFriction()
+            }
         }
 
         try {
@@ -251,7 +255,11 @@ class SessionManager(
         designFrictionLaunchInProgress = true
 
         val intent = Intent(context, FrictionActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION
+            )
             putExtra(FrictionActivity.EXTRA_TARGET_PACKAGE, targetPackage)
         }
 

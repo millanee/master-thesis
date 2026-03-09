@@ -48,6 +48,8 @@ class FrictionActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Remove enter/exit animation so the friction screen appears instantly (no transition).
+        overridePendingTransition(0, 0)
 
         // Ensure this Activity covers the entire screen surface.
         enableEdgeToEdge()
