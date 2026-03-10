@@ -48,13 +48,17 @@ fun MainScreen() {
     val studyVm: StudyViewModel = viewModel()
     val study by studyVm.snapshot.collectAsState()
     val bedtimeSubmitted by bedtimeVm.isSubmitted.collectAsState()
+    val locationsSubmitted by locationsVm.isSubmitted.collectAsState()
+    val appsSubmitted by appsVm.isSubmitted.collectAsState()
 
     LaunchedEffect(Unit) {
         studyVm.initIfMissing()
     }
-    // When user completes last onboarding step (bedtime), set study start date and assign group
-    LaunchedEffect(bedtimeSubmitted) {
-        if (bedtimeSubmitted) studyVm.initIfMissing()
+    // When onboarding becomes complete (apps, locations, bedtime), set study start date and assign group.
+    LaunchedEffect(locationsSubmitted, appsSubmitted, bedtimeSubmitted) {
+        if (locationsSubmitted && appsSubmitted && bedtimeSubmitted) {
+            studyVm.initIfMissing()
+        }
     }
 
     Column(

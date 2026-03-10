@@ -60,31 +60,46 @@ class StudyRepository(private val context: Context) {
     }
 
     /**
-     * Ensures participant ID exists and assigns group + start date as soon as the app is used,
-     * so the user can see group, week, and active intervention from the start (no need to wait for onboarding).
+     * Ensures participant ID exists. When onboarding is complete for the first time
+     * (apps submitted, locations with at least one HOME and WORK, and bedtime submitted),
+     * this also sets the study start date and assigns the study group.
+     *
+     * The study start date is therefore the moment all required information is available,
+     * and is used to count study days and schedule intervention switches.
      */
     suspend fun initStudyIfMissing(): Triple<String, StudyGroup?, Long?> {
         val pid = getOrCreateParticipantId()
 
+        val onboardingComplete = isOnboardingComplete()
+
         val start = startDateMs.first()
-        val startToUse = if (start == null) {
-            val now = System.currentTimeMillis()
-            setStartDateMs(now)
-            now
+        val startToUse = if (onboardingComplete) {
+            if (start == null) {
+                val now = System.currentTimeMillis()
+                setStartDateMs(now)
+                now
+            } else {
+                start
+            }
         } else {
-            start
+            // Onboarding not complete yet: don't set a start date.
+            null
         }
 
         val currentGroup = group.first()
-        val finalGroup = if (currentGroup == null) {
-            val g = assignment.assignGroup(pid, startToUse)
-            setGroup(g)
-            g
+        val finalGroup = if (onboardingComplete) {
+            if (currentGroup == null && startToUse != null) {
+                val g = assignment.assignGroup(pid, startToUse)
+                setGroup(g)
+                g
+            } else {
+                currentGroup
+            }
         } else {
             currentGroup
         }
 
-        if (isOnboardingComplete()) {
+        if (onboardingComplete) {
             syncParticipantTargetAppsToFirestore(pid)
         }
 
