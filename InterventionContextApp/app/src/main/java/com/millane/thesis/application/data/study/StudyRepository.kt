@@ -59,13 +59,12 @@ class StudyRepository(private val context: Context) {
         return hasHome && hasWork
     }
 
+    /**
+     * Ensures participant ID exists and assigns group + start date as soon as the app is used,
+     * so the user can see group, week, and active intervention from the start (no need to wait for onboarding).
+     */
     suspend fun initStudyIfMissing(): Triple<String, StudyGroup?, Long?> {
         val pid = getOrCreateParticipantId()
-
-        if (!isOnboardingComplete()) {
-            syncParticipantTargetAppsToFirestore(pid)
-            return Triple(pid, null, null)
-        }
 
         val start = startDateMs.first()
         val startToUse = if (start == null) {
@@ -85,7 +84,9 @@ class StudyRepository(private val context: Context) {
             currentGroup
         }
 
-        syncParticipantTargetAppsToFirestore(pid)
+        if (isOnboardingComplete()) {
+            syncParticipantTargetAppsToFirestore(pid)
+        }
 
         return Triple(pid, finalGroup, startToUse)
     }

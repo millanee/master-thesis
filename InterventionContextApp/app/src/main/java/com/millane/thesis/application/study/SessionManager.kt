@@ -3,10 +3,13 @@ package com.millane.thesis.application.study
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.google.firebase.firestore.FirebaseFirestore
 import com.millane.thesis.application.FrictionActivity
+import com.millane.thesis.application.GoalAdvancementActivity
 import com.millane.thesis.application.data.apps.AppSelectionRepository
 import com.millane.thesis.application.data.bedtime.BedtimeRepository
 import com.millane.thesis.application.data.dailygoals.DailyGoalsRepository
@@ -44,6 +47,10 @@ class SessionManager(
     /** True from when we start FrictionActivity until it calls markDesignFrictionShown(); prevents double launch. */
     @Volatile
     private var designFrictionLaunchInProgress: Boolean = false
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val goalAdvancementDelayMs = 1 * 60 * 1000L // 1 min for testing (was 15)
+    private var goalAdvancementRunnable: Runnable? = null
 
     @RequiresApi(Build.VERSION_CODES.O)
     fun onForegroundAppChanged(packageName: String) {
@@ -214,6 +221,11 @@ class SessionManager(
                 maybeLaunchDesignFriction()
             }
         }
+        if (activeInterventionType == InterventionType.GOAL_ADVANCEMENT) {
+            withContext(Dispatchers.Main.immediate) {
+                scheduleGoalAdvancementTrigger()
+            }
+        }
 
         try {
             sessionRepo.createSession(record)
@@ -244,7 +256,69 @@ class SessionManager(
             activeApp = null
             designFrictionShownForCurrentSession = false
             designFrictionLaunchInProgress = false
+            cancelGoalAdvancementTrigger()
         }
+    }
+
+    fun markGoalAdvancementShown() {
+        val sessionId = activeSessionId ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            sessionRepo.addInterventionShown(
+                sessionId = sessionId,
+                shownAtMs = System.currentTimeMillis()
+            )
+            Log.d("SESSION", "goal advancement shown for session=$sessionId")
+        }
+    }
+
+    fun markGoalAdvancementDismissed() {
+        val sessionId = activeSessionId ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            sessionRepo.markLatestInterventionDismissed(
+                sessionId = sessionId,
+                dismissedAtMs = System.currentTimeMillis()
+            )
+            Log.d("SESSION", "goal advancement dismissed for session=$sessionId")
+        }
+    }
+
+    /** Called after user chooses "Continue" so we show the intervention again after another 15 min. */
+    fun scheduleNextGoalAdvancementTrigger() {
+        mainHandler.post { scheduleGoalAdvancementTrigger() }
+    }
+
+    /** Schedules the 15-min timer; when it fires, launches GoalAdvancementActivity. */
+    fun scheduleGoalAdvancementTrigger() {
+        cancelGoalAdvancementTrigger()
+        val targetPackage = activeApp ?: return
+        if (activeSessionId == null) return
+        goalAdvancementRunnable = Runnable {
+            if (activeSessionId != null && activeApp == targetPackage) {
+                maybeLaunchGoalAdvancement()
+            }
+        }
+        mainHandler.postDelayed(goalAdvancementRunnable!!, goalAdvancementDelayMs)
+        Log.d("SESSION", "scheduled goal advancement in 15 min for $targetPackage")
+    }
+
+    fun cancelGoalAdvancementTrigger() {
+        goalAdvancementRunnable?.let { mainHandler.removeCallbacks(it) }
+        goalAdvancementRunnable = null
+    }
+
+    private fun maybeLaunchGoalAdvancement() {
+        val targetPackage = activeApp ?: return
+        if (activeSessionId == null) return
+        val intent = Intent(context, GoalAdvancementActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION
+            )
+            putExtra(GoalAdvancementActivity.EXTRA_TARGET_PACKAGE, targetPackage)
+        }
+        context.startActivity(intent)
+        Log.d("SESSION", "launched GoalAdvancementActivity for $targetPackage")
     }
 
     private fun maybeLaunchDesignFriction() {

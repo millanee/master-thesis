@@ -12,8 +12,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.millane.thesis.application.DailyGoalsPromptActivity
 import com.millane.thesis.application.data.datastore.DevDataStoreDump
 import com.millane.thesis.application.data.datastore.DevDataStoreReset
+import com.millane.thesis.application.data.dailygoals.DailyGoalsRepository
 import com.millane.thesis.application.ui.screen.sections.BedtimeCard
 import com.millane.thesis.application.ui.screen.sections.DailyGoalsCard
 import com.millane.thesis.application.ui.screen.sections.LocationsSection
@@ -23,6 +25,7 @@ import com.millane.thesis.application.ui.theme.PageBackground
 import com.millane.thesis.application.ui.viewmodels.AppSelectionViewModel
 import com.millane.thesis.application.ui.viewmodels.BedtimeViewModel
 import com.millane.thesis.application.ui.viewmodels.LocationsViewModel
+import com.millane.thesis.application.util.getCurrentDayBoundaryMs
 import kotlinx.coroutines.launch
 import com.millane.thesis.application.ui.viewmodels.DailyGoalsViewModel
 import com.millane.thesis.application.ui.viewmodels.StudyViewModel
@@ -48,6 +51,21 @@ fun MainScreen() {
     val studyVm: StudyViewModel = viewModel()
     val study by studyVm.snapshot.collectAsState()
     val bedtimeSubmitted by bedtimeVm.isSubmitted.collectAsState()
+
+    // Fallback: when the user opens our app after the boundary, show the prompt from foreground
+    // (Android may block starting an Activity directly from ACTION_USER_PRESENT receiver).
+    LaunchedEffect(Unit) {
+        val repo = DailyGoalsRepository(context)
+        val currentDay = getCurrentDayBoundaryMs()
+        val lastShown = repo.getLastDailyGoalsPromptDayMs()
+        if (lastShown != currentDay) {
+            context.startActivity(
+                android.content.Intent(context, DailyGoalsPromptActivity::class.java).apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+        }
+    }
 
     LaunchedEffect(Unit) {
         studyVm.initIfMissing()
