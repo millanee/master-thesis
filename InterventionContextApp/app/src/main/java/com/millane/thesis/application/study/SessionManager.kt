@@ -259,10 +259,29 @@ class SessionManager(
         val id = activeSessionId ?: return
 
         try {
+            // Re-detect context at the moment the session ends so we can
+            // compare it with the context at session start in Firestore.
+            val bedtimeStart = bedtimeRepo.bedtime.first()
+            val submittedLocations = locationsRepo.locations.first()
+            val activeGeofences = GeofenceContextStore.activeGeofenceIds.value
+
+            val detectedContextEnd = ContextDetector.detect(
+                bedtimeStart = bedtimeStart,
+                activeGeofenceIds = activeGeofences,
+                submittedLocations = submittedLocations
+            )
+
+            val locationContextAtEnd =
+                if (detectedContextEnd == DetectedContext.NONE) {
+                    null
+                } else {
+                    ContextDetector.toLocationContextType(detectedContextEnd)
+                }
+
             sessionRepo.closeSession(
                 sessionId = id,
                 closedAtMs = System.currentTimeMillis(),
-                detectedContextAtEnd = null
+                detectedContextAtEnd = locationContextAtEnd
             )
             Log.d("SESSION", "ended session $id")
         } catch (e: Exception) {
