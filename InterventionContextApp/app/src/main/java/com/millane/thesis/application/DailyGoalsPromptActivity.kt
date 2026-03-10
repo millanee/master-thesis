@@ -1,6 +1,8 @@
 package com.millane.thesis.application
 
+import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -25,21 +27,27 @@ import androidx.compose.ui.window.Dialog
 import com.millane.thesis.application.data.dailygoals.DailyGoalsRepository
 import com.millane.thesis.application.domain.dailygoals.DailyGoal
 import com.millane.thesis.application.ui.theme.*
-import com.millane.thesis.application.util.getCurrentDayBoundaryMs
+import com.millane.thesis.application.util.getCurrentStudyDayBoundary4AmMs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
 /**
- * Shown at first phone unlock of the day (after 4 AM). User enters one or more daily goals.
- * On open, all previous goals are cleared. On confirm, goals are saved and the day is marked as prompted.
+ * Shown on first target-app open after 4 AM on Goal Advancement weeks.
+ * On open, all previous goals are cleared. User must enter one or more daily goals.
+ * After confirm, the user is taken back to the originally opened target app.
  */
 class DailyGoalsPromptActivity : ComponentActivity() {
+
+    companion object {
+        const val EXTRA_TARGET_PACKAGE = "com.millane.thesis.application.extra.DAILY_GOALS_TARGET_PACKAGE"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val targetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE).orEmpty()
         val goalsRepo = DailyGoalsRepository(applicationContext)
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
@@ -54,12 +62,10 @@ class DailyGoalsPromptActivity : ComponentActivity() {
                             withContext(Dispatchers.IO) {
                                 val list = goals.map { DailyGoal(id = UUID.randomUUID().toString(), text = it) }
                                 goalsRepo.replaceAllGoals(list)
-                                goalsRepo.setLastDailyGoalsPromptDayMs(getCurrentDayBoundaryMs())
                             }
-                            finish()
+                            launchTargetAppAndFinish(targetPackage)
                         }
-                    },
-                    onDismiss = { finish() }
+                    }
                 )
             }
         }
@@ -68,14 +74,13 @@ class DailyGoalsPromptActivity : ComponentActivity() {
 
 @Composable
 private fun DailyGoalsPromptContent(
-    onConfirm: (List<String>) -> Unit,
-    onDismiss: () -> Unit
+    onConfirm: (List<String>) -> Unit
 ) {
     var goalEntries by remember { mutableStateOf(listOf("")) }
     val focusManager = LocalFocusManager.current
     val scrollState = rememberScrollState()
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = { /* non-cancelable: user must enter a goal */ }) {
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = CardBackground,
@@ -132,28 +137,43 @@ private fun DailyGoalsPromptContent(
                 Spacer(Modifier.height(16.dp))
 
                 val canConfirm = goalEntries.any { it.trim().isNotEmpty() }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Button(
+                    onClick = {
+                        val trimmed = goalEntries.map { it.trim() }.filter { it.isNotEmpty() }
+                        if (trimmed.isNotEmpty()) onConfirm(trimmed)
+                    },
+                    enabled = canConfirm,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Skip")
-                    }
-                    Button(
-                        onClick = {
-                            val trimmed = goalEntries.map { it.trim() }.filter { it.isNotEmpty() }
-                            if (trimmed.isNotEmpty()) onConfirm(trimmed)
-                        },
-                        enabled = canConfirm,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Confirm")
-                    }
+                    Text("Confirm")
                 }
             }
         }
     }
+}
+
+private fun DailyGoalsPromptActivity.launchTargetAppAndFinish(targetPackage: String) {
+    val packageToLaunch = targetPackage.takeIf { it.isNotEmpty() && it != packageName }
+    if (packageToLaunch != null) {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageToLaunch)
+        if (launchIntent != null) {
+            launchIntent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
+            try {
+                startActivity(launchIntent)
+            } catch (e: Exception) {
+                Log.e("DailyGoalsPrompt", "Failed to launch target app: $packageToLaunch", e)
+            }
+        } else {
+            Log.w("DailyGoalsPrompt", "No launch intent for package: $packageToLaunch")
+        }
+    } else {
+        Log.w("DailyGoalsPrompt", "Target package is empty or our own package; not launching")
+    }
+    finishAndRemoveTask()
 }

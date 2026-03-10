@@ -8,6 +8,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.google.firebase.firestore.FirebaseFirestore
+import com.millane.thesis.application.DailyGoalsPromptActivity
 import com.millane.thesis.application.FrictionActivity
 import com.millane.thesis.application.GoalAdvancementActivity
 import com.millane.thesis.application.data.apps.AppSelectionRepository
@@ -17,6 +18,7 @@ import com.millane.thesis.application.data.location.LocationsRepository
 import com.millane.thesis.application.data.study.FirestoreSessionRepository
 import com.millane.thesis.application.data.study.StudyRepository
 import com.millane.thesis.application.location.geofence.GeofenceContextStore
+import com.millane.thesis.application.util.getCurrentStudyDayBoundary4AmMs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -51,6 +53,10 @@ class SessionManager(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val goalAdvancementDelayMs = 1 * 60 * 1000L // 1 min for testing (was 15)
     private var goalAdvancementRunnable: Runnable? = null
+
+    /** Prevents double-launch when accessibility events fire multiple times quickly. */
+    @Volatile
+    private var dailyGoalsPromptLaunchInProgress: Boolean = false
 
     @RequiresApi(Build.VERSION_CODES.O)
     fun onForegroundAppChanged(packageName: String) {
@@ -115,6 +121,16 @@ class SessionManager(
                 if (detectedContext == DetectedContext.NONE) {
                     endSessionIfRunningLocked()
                     return@withLock
+                }
+
+                // Goal Advancement: first target-app open after 4 AM should prompt for daily goals.
+                if (snapshot.activeInterventionType == InterventionType.GOAL_ADVANCEMENT) {
+                    val launchedPrompt = maybeLaunchDailyGoalsPromptForNewDay(packageName)
+                    // If we showed the prompt, don't start a session yet; we'll start it
+                    // when the user returns to the target app after setting goals.
+                    if (launchedPrompt) {
+                        return@withLock
+                    }
                 }
 
                 startSessionLocked(
@@ -257,7 +273,34 @@ class SessionManager(
             designFrictionShownForCurrentSession = false
             designFrictionLaunchInProgress = false
             cancelGoalAdvancementTrigger()
+            dailyGoalsPromptLaunchInProgress = false
         }
+    }
+
+    private suspend fun maybeLaunchDailyGoalsPromptForNewDay(targetPackage: String): Boolean {
+        if (dailyGoalsPromptLaunchInProgress) return false
+
+        val boundaryMs = getCurrentStudyDayBoundary4AmMs()
+        val lastPrompted = goalsRepo.getLastDailyGoalsPromptDayMs()
+        if (lastPrompted == boundaryMs) return false
+
+        // Mark as prompted for this study-day so we don't relaunch repeatedly.
+        withContext(Dispatchers.IO) {
+            goalsRepo.setLastDailyGoalsPromptDayMs(boundaryMs)
+        }
+        dailyGoalsPromptLaunchInProgress = true
+        withContext(Dispatchers.Main.immediate) {
+            val intent = Intent(context, DailyGoalsPromptActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION
+                )
+                putExtra(DailyGoalsPromptActivity.EXTRA_TARGET_PACKAGE, targetPackage)
+            }
+            context.startActivity(intent)
+        }
+        return true
     }
 
     fun markGoalAdvancementShown() {
