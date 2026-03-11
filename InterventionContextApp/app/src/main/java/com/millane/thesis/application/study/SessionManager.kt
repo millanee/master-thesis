@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresApi
+import com.millane.thesis.application.ContextValidationActivity
 import com.google.firebase.firestore.FirebaseFirestore
 import com.millane.thesis.application.DailyGoalsPromptActivity
 import com.millane.thesis.application.FrictionActivity
@@ -346,6 +347,20 @@ class SessionManager(
                 detectedContextAtEnd = locationContextAtEnd
             )
             Log.d("SESSION", "ended session $id")
+
+            // After each ended session (which only exists if a context was detected at start),
+            // ask the user to confirm whether the detected context matched their actual context.
+            withContext(Dispatchers.Main.immediate) {
+                val intent = Intent(context, ContextValidationActivity::class.java).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_NO_ANIMATION
+                    )
+                    putExtra(ContextValidationActivity.EXTRA_SESSION_ID, id)
+                }
+                context.startActivity(intent)
+            }
         } catch (e: Exception) {
             Log.e("SESSION", "failed to end session $id", e)
         } finally {

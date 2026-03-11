@@ -145,9 +145,10 @@ class FirestoreSessionRepository(
         sessionId: String,
         status: ContextValidationStatus
     ) {
+        val isConfirmed = status == ContextValidationStatus.CONFIRMED
         sessionsCol.document(sessionId)
             .set(
-                mapOf("contextValidationStatus" to status.name),
+                mapOf("contextValidationStatus" to isConfirmed),
                 SetOptions.merge()
             )
             .await()
