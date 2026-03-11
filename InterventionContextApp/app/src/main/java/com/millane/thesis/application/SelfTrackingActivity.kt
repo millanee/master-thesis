@@ -408,11 +408,11 @@ private fun HourRow(
                         verticalAlignment = Alignment.Bottom
                     ) {
                         fractions.forEachIndexed { idx, fraction ->
-                            val barHeight = (fraction * 60f).dp
+                            val heightFraction = fraction.coerceIn(0f, 1f)
                             Box(
                                 modifier = Modifier
                                     .width(6.dp)
-                                    .height(barHeight)
+                                    .fillMaxHeight(heightFraction)
                                     .background(
                                         if (globalOffset + idx == currentHourIndex) {
                                             Color(0xFF2DB6CC)
