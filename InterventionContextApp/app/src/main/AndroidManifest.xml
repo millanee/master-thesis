@@ -63,6 +63,11 @@
             android:exported="false"
             android:theme="@style/Theme.InterventionContextApp" />
 
+        <activity
+            android:name=".SelfTrackingActivity"
+            android:exported="false"
+            android:theme="@style/Theme.InterventionContextApp" />
+
         <service
             android:name=".apps.AppForegroundService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"

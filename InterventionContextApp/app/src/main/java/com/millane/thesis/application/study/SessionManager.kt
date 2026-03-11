@@ -11,12 +11,15 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.millane.thesis.application.DailyGoalsPromptActivity
 import com.millane.thesis.application.FrictionActivity
 import com.millane.thesis.application.GoalAdvancementActivity
+import com.millane.thesis.application.SelfTrackingActivity
 import com.millane.thesis.application.data.apps.AppSelectionRepository
 import com.millane.thesis.application.data.bedtime.BedtimeRepository
 import com.millane.thesis.application.data.dailygoals.DailyGoalsRepository
 import com.millane.thesis.application.data.location.LocationsRepository
 import com.millane.thesis.application.data.study.FirestoreSessionRepository
 import com.millane.thesis.application.data.study.StudyRepository
+import com.millane.thesis.application.data.usage.SelfTrackingUsageRepository
+import com.millane.thesis.application.domain.location.LocationContextType
 import com.millane.thesis.application.location.geofence.GeofenceContextStore
 import com.millane.thesis.application.util.getCurrentStudyDayBoundary4AmMs
 import kotlinx.coroutines.CoroutineScope
@@ -37,11 +40,15 @@ class SessionManager(
     private val locationsRepo = LocationsRepository(context)
     private val appsRepo = AppSelectionRepository(context)
     private val sessionRepo = FirestoreSessionRepository(FirebaseFirestore.getInstance())
+    private val usageRepo = SelfTrackingUsageRepository(context)
 
     private val sessionMutex = Mutex()
 
     private var activeSessionId: String? = null
     private var activeApp: String? = null
+    private var activeSessionOpenedAtMs: Long? = null
+    private var activeLocationAtStart: LocationContextType? = null
+    private var activeIntervention: InterventionType? = null
 
     @Volatile
     private var designFrictionShownForCurrentSession: Boolean = false
@@ -53,6 +60,9 @@ class SessionManager(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val goalAdvancementDelayMs = 1 * 60 * 1000L // 1 min for testing (was 15)
     private var goalAdvancementRunnable: Runnable? = null
+
+    private val selfTrackingDelayMs = 1 * 60 * 1000L // 1 min for testing (was 15)
+    private var selfTrackingRunnable: Runnable? = null
 
     /** Prevents double-launch when accessibility events fire multiple times quickly. */
     @Volatile
@@ -133,6 +143,11 @@ class SessionManager(
                     }
                 }
 
+                // Self-tracking: touching stats here ensures they are reset on first open after 4 AM.
+                if (snapshot.activeInterventionType == InterventionType.SELF_TRACKING) {
+                    usageRepo.touchToday()
+                }
+
                 startSessionLocked(
                     packageName = packageName,
                     ctx = detectedContext,
@@ -205,6 +220,28 @@ class SessionManager(
         }
     }
 
+    fun markSelfTrackingShown() {
+        val sessionId = activeSessionId ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            sessionRepo.addInterventionShown(
+                sessionId = sessionId,
+                shownAtMs = System.currentTimeMillis()
+            )
+            Log.d("SESSION", "self-tracking shown for session=$sessionId")
+        }
+    }
+
+    fun markSelfTrackingDismissed() {
+        val sessionId = activeSessionId ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            sessionRepo.markLatestInterventionDismissed(
+                sessionId = sessionId,
+                dismissedAtMs = System.currentTimeMillis()
+            )
+            Log.d("SESSION", "self-tracking dismissed for session=$sessionId")
+        }
+    }
+
     private suspend fun startSessionLocked(
         packageName: String,
         ctx: DetectedContext,
@@ -216,6 +253,8 @@ class SessionManager(
             return
         }
 
+        val locationAtStart = ContextDetector.toLocationContextType(ctx)
+
         val record = SessionRecord(
             participantId = studyRepo.getCurrentStudySnapshot()?.participantId ?: return,
             targetAppPackage = packageName,
@@ -223,12 +262,15 @@ class SessionManager(
             studyGroup = studyRepo.getCurrentStudySnapshot()?.studyGroup ?: return,
             studyWeek = studyRepo.getCurrentStudySnapshot()?.studyWeek ?: return,
             activeInterventionType = activeInterventionType,
-            detectedContextAtStart = ContextDetector.toLocationContextType(ctx),
+            detectedContextAtStart = locationAtStart,
             goalsCountAtSessionStart = goalsCount
         )
 
         activeSessionId = record.sessionId
         activeApp = packageName
+        activeSessionOpenedAtMs = record.openedAtMs
+        activeLocationAtStart = locationAtStart
+        activeIntervention = activeInterventionType
         designFrictionShownForCurrentSession = false
 
         if (activeInterventionType == InterventionType.DESIGN_FRICTION) {
@@ -242,6 +284,11 @@ class SessionManager(
                 scheduleGoalAdvancementTrigger()
             }
         }
+        if (activeInterventionType == InterventionType.SELF_TRACKING) {
+            withContext(Dispatchers.Main.immediate) {
+                scheduleSelfTrackingTrigger()
+            }
+        }
 
         try {
             sessionRepo.createSession(record)
@@ -249,6 +296,9 @@ class SessionManager(
         } catch (e: Exception) {
             activeSessionId = null
             activeApp = null
+            activeSessionOpenedAtMs = null
+            activeLocationAtStart = null
+            activeIntervention = null
             designFrictionShownForCurrentSession = false
             designFrictionLaunchInProgress = false
             Log.e("SESSION", "failed to start session for $packageName", e)
@@ -259,6 +309,8 @@ class SessionManager(
         val id = activeSessionId ?: return
 
         try {
+            val closedAtMs = System.currentTimeMillis()
+
             // Re-detect context at the moment the session ends so we can
             // compare it with the context at session start in Firestore.
             val bedtimeStart = bedtimeRepo.bedtime.first()
@@ -278,9 +330,19 @@ class SessionManager(
                     ContextDetector.toLocationContextType(detectedContextEnd)
                 }
 
+            if (activeIntervention == InterventionType.SELF_TRACKING) {
+                val openedAt = activeSessionOpenedAtMs ?: closedAtMs
+                val isHome = activeLocationAtStart == LocationContextType.HOME
+                usageRepo.recordFinishedSession(
+                    startMs = openedAt,
+                    endMs = closedAtMs,
+                    isHome = isHome
+                )
+            }
+
             sessionRepo.closeSession(
                 sessionId = id,
-                closedAtMs = System.currentTimeMillis(),
+                closedAtMs = closedAtMs,
                 detectedContextAtEnd = locationContextAtEnd
             )
             Log.d("SESSION", "ended session $id")
@@ -289,9 +351,13 @@ class SessionManager(
         } finally {
             activeSessionId = null
             activeApp = null
+            activeSessionOpenedAtMs = null
+            activeLocationAtStart = null
+            activeIntervention = null
             designFrictionShownForCurrentSession = false
             designFrictionLaunchInProgress = false
             cancelGoalAdvancementTrigger()
+            cancelSelfTrackingTrigger()
             dailyGoalsPromptLaunchInProgress = false
         }
     }
@@ -368,6 +434,32 @@ class SessionManager(
         goalAdvancementRunnable = null
     }
 
+    fun scheduleSelfTrackingTrigger() {
+        cancelSelfTrackingTrigger()
+        val targetPackage = activeApp ?: return
+        if (activeSessionId == null) return
+        selfTrackingRunnable = Runnable {
+            if (activeSessionId != null &&
+                activeApp == targetPackage &&
+                activeIntervention == InterventionType.SELF_TRACKING
+            ) {
+                maybeLaunchSelfTracking()
+            }
+        }
+        mainHandler.postDelayed(selfTrackingRunnable!!, selfTrackingDelayMs)
+        Log.d("SESSION", "scheduled self-tracking in 15 min for $targetPackage")
+    }
+
+    fun cancelSelfTrackingTrigger() {
+        selfTrackingRunnable?.let { mainHandler.removeCallbacks(it) }
+        selfTrackingRunnable = null
+    }
+
+    /** Called after user chooses "Continue" so we show the self-tracking dialog again after another interval. */
+    fun scheduleNextSelfTrackingTrigger() {
+        mainHandler.post { scheduleSelfTrackingTrigger() }
+    }
+
     private fun maybeLaunchGoalAdvancement() {
         val targetPackage = activeApp ?: return
         if (activeSessionId == null) return
@@ -381,6 +473,25 @@ class SessionManager(
         }
         context.startActivity(intent)
         Log.d("SESSION", "launched GoalAdvancementActivity for $targetPackage")
+    }
+
+    private fun maybeLaunchSelfTracking() {
+        val targetPackage = activeApp ?: return
+        val openedAt = activeSessionOpenedAtMs ?: System.currentTimeMillis()
+        val isHome = activeLocationAtStart == LocationContextType.HOME
+        if (activeSessionId == null) return
+        val intent = Intent(context, SelfTrackingActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION
+            )
+            putExtra(SelfTrackingActivity.EXTRA_TARGET_PACKAGE, targetPackage)
+            putExtra(SelfTrackingActivity.EXTRA_SESSION_OPENED_AT_MS, openedAt)
+            putExtra(SelfTrackingActivity.EXTRA_SESSION_IS_HOME, isHome)
+        }
+        context.startActivity(intent)
+        Log.d("SESSION", "launched SelfTrackingActivity for $targetPackage")
     }
 
     private fun maybeLaunchDesignFriction() {
