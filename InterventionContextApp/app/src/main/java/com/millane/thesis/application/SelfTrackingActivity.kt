@@ -15,12 +15,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Divider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -303,32 +305,12 @@ private fun UsageStatisticsDialog(
                     fontSize = 16.sp,
                     color = PrimaryText
                 )
-
                 Spacer(Modifier.height(8.dp))
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    state.hourFractions.forEachIndexed { idx, fraction ->
-                        val barHeight = (fraction * 100f).dp
-                        Box(
-                            modifier = Modifier
-                                .width(6.dp)
-                                .height(barHeight)
-                                .background(
-                                    if (idx == state.currentHourIndex) {
-                                        Color(0xFF2DB6CC)
-                                    } else {
-                                        Color(0xFFBBBBBB)
-                                    }
-                                )
-                        )
-                    }
-                }
+                HourlyDiagram(
+                    fractions = state.hourFractions,
+                    currentHourIndex = state.currentHourIndex
+                )
 
                 Spacer(Modifier.height(6.dp))
 
@@ -350,6 +332,125 @@ private fun UsageStatisticsDialog(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun HourlyDiagram(
+    fractions: List<Float>,
+    currentHourIndex: Int
+) {
+    val hourLabels = listOf("4", "5", "6", "7", "8", "9", "10", "11", "12", "1", "2", "3")
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        HourRow(
+            titleSuffix = "p.m.",
+            labels = hourLabels,
+            fractions = fractions.subList(0, 12),
+            globalOffset = 0,
+            currentHourIndex = currentHourIndex
+        )
+        HourRow(
+            titleSuffix = "a.m.",
+            labels = hourLabels,
+            fractions = fractions.subList(12, 24),
+            globalOffset = 12,
+            currentHourIndex = currentHourIndex
+        )
+    }
+}
+
+@Composable
+private fun HourRow(
+    titleSuffix: String,
+    labels: List<String>,
+    fractions: List<Float>,
+    globalOffset: Int,
+    currentHourIndex: Int
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(80.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            Column(
+                verticalArrangement = Arrangement.SpaceBetween,
+                horizontalAlignment = Alignment.Start
+            ) {
+                Text(text = "60\nmin", fontSize = 10.sp, color = SecondaryText)
+                Text(text = "0\nmin", fontSize = 10.sp, color = SecondaryText)
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            ) {
+                Divider(
+                    color = SecondaryText.copy(alpha = 0.3f),
+                    thickness = 1.dp
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        fractions.forEachIndexed { idx, fraction ->
+                            val barHeight = (fraction * 60f).dp
+                            Box(
+                                modifier = Modifier
+                                    .width(6.dp)
+                                    .height(barHeight)
+                                    .background(
+                                        if (globalOffset + idx == currentHourIndex) {
+                                            Color(0xFF2DB6CC)
+                                        } else {
+                                            Color(0xFFBBBBBB)
+                                        }
+                                    )
+                            )
+                        }
+                    }
+                }
+                Divider(
+                    color = SecondaryText.copy(alpha = 0.3f),
+                    thickness = 1.dp
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Spacer(Modifier.width(28.dp))
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                labels.forEach { label ->
+                    Text(text = label, fontSize = 10.sp, color = SecondaryText)
+                }
+            }
+            Text(
+                text = titleSuffix,
+                fontSize = 10.sp,
+                color = SecondaryText,
+                modifier = Modifier.padding(start = 4.dp)
+            )
         }
     }
 }
@@ -408,4 +509,3 @@ private fun SelfTrackingActivity.launchTargetAppAndFinish(targetPackage: String)
     }
     finishAndRemoveTask()
 }
-
