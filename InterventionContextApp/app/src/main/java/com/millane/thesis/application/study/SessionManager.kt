@@ -310,6 +310,20 @@ class SessionManager(
         val id = activeSessionId ?: return
 
         try {
+            // Launch the context confirmation dialog as early as possible so it appears
+            // quickly after the user presses Home.
+            withContext(Dispatchers.Main.immediate) {
+                val intent = Intent(context, ContextValidationActivity::class.java).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_NO_ANIMATION
+                    )
+                    putExtra(ContextValidationActivity.EXTRA_SESSION_ID, id)
+                }
+                context.startActivity(intent)
+            }
+
             val closedAtMs = System.currentTimeMillis()
 
             // Re-detect context at the moment the session ends so we can
@@ -347,20 +361,6 @@ class SessionManager(
                 detectedContextAtEnd = locationContextAtEnd
             )
             Log.d("SESSION", "ended session $id")
-
-            // After each ended session (which only exists if a context was detected at start),
-            // ask the user to confirm whether the detected context matched their actual context.
-            withContext(Dispatchers.Main.immediate) {
-                val intent = Intent(context, ContextValidationActivity::class.java).apply {
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                            Intent.FLAG_ACTIVITY_NO_ANIMATION
-                    )
-                    putExtra(ContextValidationActivity.EXTRA_SESSION_ID, id)
-                }
-                context.startActivity(intent)
-            }
         } catch (e: Exception) {
             Log.e("SESSION", "failed to end session $id", e)
         } finally {
