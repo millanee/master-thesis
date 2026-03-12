@@ -13,12 +13,19 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+enum class StudyStatus {
+    NOT_STARTED,
+    IN_PROGRESS,
+    COMPLETED
+}
+
 data class StudySnapshot(
     val participantId: String? = null,
     val group: StudyGroup? = null,
     val startDateMs: Long? = null,
     val weekIndex: Int? = null,
-    val activeIntervention: InterventionType? = null
+    val activeIntervention: InterventionType? = null,
+    val status: StudyStatus = StudyStatus.NOT_STARTED
 )
 
 class StudyViewModel(app: Application) : AndroidViewModel(app) {
@@ -30,14 +37,31 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
             if (pid == null || group == null || start == null) {
                 StudySnapshot(participantId = pid, group = group, startDateMs = start)
             } else {
-                val w = StudyManager.weekIndex(start)
+                val now = System.currentTimeMillis()
+                val status = when {
+                    now < start -> StudyStatus.NOT_STARTED
+                    StudyManager.studyDayIndex(start, now) >= StudyManager.TOTAL_INTERVENTION_DAYS -> StudyStatus.COMPLETED
+                    else -> StudyStatus.IN_PROGRESS
+                }
+
+                if (status != StudyStatus.IN_PROGRESS) {
+                    return@combine StudySnapshot(
+                        participantId = pid,
+                        group = group,
+                        startDateMs = start,
+                        status = status
+                    )
+                }
+
+                val w = StudyManager.weekIndex(start, now)
                 val active = StudyManager.interventionFor(group, w)
                 StudySnapshot(
                     participantId = pid,
                     group = group,
                     startDateMs = start,
                     weekIndex = w,
-                    activeIntervention = active
+                    activeIntervention = active,
+                    status = status
                 )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StudySnapshot())
@@ -53,6 +77,6 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setStartDateNow() {
-        viewModelScope.launch { repo.setStartDateMs(System.currentTimeMillis()) }
+        viewModelScope.launch { repo.setStartDateToNextStudyDay(System.currentTimeMillis()) }
     }
 }

@@ -8,8 +8,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -94,6 +96,7 @@ private fun ContextValidationScreen(
 ) {
     var dialogVisible by remember { mutableStateOf(true) }
     var contextLabel by remember { mutableStateOf<String?>(null) }
+    var loadFinished by remember { mutableStateOf(false) }
 
     // Load the detected context for this session from Firestore.
     androidx.compose.runtime.LaunchedEffect(sessionId) {
@@ -104,6 +107,7 @@ private fun ContextValidationScreen(
 
         val rawContext = snap?.getString("detectedContextAtStart")
         contextLabel = rawContext?.let { toHumanReadableContext(it) }
+        loadFinished = true
     }
 
     if (!dialogVisible) {
@@ -117,7 +121,9 @@ private fun ContextValidationScreen(
         return
     }
 
-    val questionText = if (contextLabel != null) {
+    val questionText: String? = if (!loadFinished) {
+        null
+    } else if (contextLabel != null) {
         "Was your context throughout this session the following: $contextLabel?"
     } else {
         "Was the detected context your actual context throughout this session?"
@@ -138,10 +144,19 @@ private fun ContextValidationScreen(
                 )
             },
             text = {
-                Text(
-                    text = questionText,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                if (questionText == null) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else {
+                    Text(
+                        text = questionText,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             },
             confirmButton = {
                 Button(onClick = {
@@ -173,4 +188,3 @@ private fun toHumanReadableContext(raw: String): String {
         }
     }
 }
-

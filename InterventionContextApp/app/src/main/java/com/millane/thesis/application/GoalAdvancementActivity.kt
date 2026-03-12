@@ -196,6 +196,7 @@ private fun GoalAdvancementActivity.navigateHomeAndClose() {
 private fun GoalAdvancementActivity.launchTargetAppAndFinish(targetPackage: String) {
     val packageToLaunch = targetPackage.takeIf { it.isNotEmpty() && it != packageName }
     if (packageToLaunch != null) {
+        sessionManager.notifyReturningUserToTargetApp(packageToLaunch)
         val launchIntent = packageManager.getLaunchIntentForPackage(packageToLaunch)
         if (launchIntent != null) {
             launchIntent.addFlags(

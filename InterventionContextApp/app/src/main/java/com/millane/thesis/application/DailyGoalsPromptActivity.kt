@@ -157,6 +157,7 @@ private fun DailyGoalsPromptContent(
 private fun DailyGoalsPromptActivity.launchTargetAppAndFinish(targetPackage: String) {
     val packageToLaunch = targetPackage.takeIf { it.isNotEmpty() && it != packageName }
     if (packageToLaunch != null) {
+        (applicationContext as ThesisApp).sessionManager.notifyReturningUserToTargetApp(packageToLaunch)
         val launchIntent = packageManager.getLaunchIntentForPackage(packageToLaunch)
         if (launchIntent != null) {
             launchIntent.addFlags(

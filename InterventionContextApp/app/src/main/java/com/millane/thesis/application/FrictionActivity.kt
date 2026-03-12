@@ -225,6 +225,7 @@ private fun FrictionActivity.launchTargetAppAndFinish(targetPackage: String) {
     // Never launch ourselves; target must be the app the user originally intended to open (e.g. Instagram).
     val packageToLaunch = targetPackage.takeIf { it.isNotEmpty() && it != packageName }
     if (packageToLaunch != null) {
+        sessionManager.notifyReturningUserToTargetApp(packageToLaunch)
         val launchIntent = packageManager.getLaunchIntentForPackage(packageToLaunch)
         if (launchIntent != null) {
             launchIntent.addFlags(

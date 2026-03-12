@@ -17,6 +17,7 @@ import com.millane.thesis.application.study.StudyManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.util.Calendar
 import java.util.UUID
 
 class StudyRepository(private val context: Context) {
@@ -64,8 +65,9 @@ class StudyRepository(private val context: Context) {
      * (apps submitted, locations with at least one HOME and WORK, and bedtime submitted),
      * this also sets the study start date and assigns the study group.
      *
-     * The study start date is therefore the moment all required information is available,
-     * and is used to count study days and schedule intervention switches.
+     * The study start date is the start of the first full study day (4 AM local time)
+     * after all required information is available, and is used to count study days and
+     * schedule intervention switches.
      */
     suspend fun initStudyIfMissing(): Triple<String, StudyGroup?, Long?> {
         val pid = getOrCreateParticipantId()
@@ -76,8 +78,9 @@ class StudyRepository(private val context: Context) {
         val startToUse = if (onboardingComplete) {
             if (start == null) {
                 val now = System.currentTimeMillis()
-                setStartDateMs(now)
-                now
+                val firstStudyDayStart = computeFirstStudyDayStartMs(now)
+                setStartDateMs(firstStudyDayStart)
+                firstStudyDayStart
             } else {
                 start
             }
@@ -111,7 +114,15 @@ class StudyRepository(private val context: Context) {
         val grp = group.first() ?: return null
         val start = startDateMs.first() ?: return null
 
-        val week = StudyManager.weekIndex(start)
+        val now = System.currentTimeMillis()
+        // Before the first study day has begun: study not yet active.
+        if (now < start) return null
+
+        val dayIndex = StudyManager.studyDayIndex(start, now)
+        // After TOTAL_INTERVENTION_DAYS full study days, the study is finished.
+        if (dayIndex >= StudyManager.TOTAL_INTERVENTION_DAYS) return null
+
+        val week = StudyManager.weekIndex(start, now)
         val intervention = StudyManager.interventionFor(grp, week)
 
         return CurrentStudySnapshot(
@@ -142,6 +153,39 @@ class StudyRepository(private val context: Context) {
     suspend fun setStartDateMs(value: Long) {
         context.appDataStore.edit { prefs ->
             prefs[Keys.START_DATE_MS] = value
+        }
+    }
+
+    /**
+     * Sets the study start date to the beginning of the next full study day (4 AM local time)
+     * after the provided timestamp.
+     */
+    suspend fun setStartDateToNextStudyDay(nowMs: Long = System.currentTimeMillis()) {
+        val firstStudyDayStart = computeFirstStudyDayStartMs(nowMs)
+        setStartDateMs(firstStudyDayStart)
+    }
+
+    /**
+     * Returns the start of the first study day (4 AM local time) strictly at or after the
+     * next study-day boundary following [nowMs]. This ensures that the day when onboarding
+     * is completed is never counted as a study day; the study always starts with the next
+     * 4 AM boundary.
+     */
+    private fun computeFirstStudyDayStartMs(nowMs: Long): Long {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = nowMs
+        cal.set(Calendar.HOUR_OF_DAY, 4)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        val today4Am = cal.timeInMillis
+        return if (nowMs < today4Am) {
+            // Between midnight and 4 AM: the next 4 AM is today.
+            today4Am
+        } else {
+            // After today's 4 AM: the next 4 AM is tomorrow.
+            cal.add(Calendar.DAY_OF_MONTH, 1)
+            cal.timeInMillis
         }
     }
 

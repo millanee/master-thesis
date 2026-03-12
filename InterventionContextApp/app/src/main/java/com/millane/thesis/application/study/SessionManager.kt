@@ -69,6 +69,36 @@ class SessionManager(
     @Volatile
     private var dailyGoalsPromptLaunchInProgress: Boolean = false
 
+    /** Set by intervention activities before launching the target app (e.g. after "Proceed" / "Continue").
+     *  Prevents ending the session and showing the context confirmation when the brief switch to launcher
+     *  occurs between our activity finishing and the target app becoming foreground. */
+    @Volatile
+    private var pendingReturnToTargetAppPackage: String? = null
+
+    @Volatile
+    private var pendingReturnToTargetTimestampMs: Long = 0L
+
+    private val pendingReturnToTargetWindowMs = 5_000L
+
+    /** Call this before launching the target app from an intervention (e.g. after "Proceed" or "Continue")
+     *  so the context confirmation is not shown for the brief transition. */
+    fun notifyReturningUserToTargetApp(targetPackage: String) {
+        if (targetPackage.isNotEmpty()) {
+            pendingReturnToTargetAppPackage = targetPackage
+            pendingReturnToTargetTimestampMs = System.currentTimeMillis()
+            Log.d("SESSION", "notifyReturningUserToTargetApp: $targetPackage")
+        }
+    }
+
+    /** True if we should skip ending the session because we are in the middle of returning the user to the target app. */
+    private fun shouldSkipEndBecauseReturningToTarget(): Boolean {
+        val pending = pendingReturnToTargetAppPackage ?: return false
+        val active = activeApp ?: return false
+        if (pending != active) return false
+        val elapsed = System.currentTimeMillis() - pendingReturnToTargetTimestampMs
+        return elapsed in 0..pendingReturnToTargetWindowMs
+    }
+
     @RequiresApi(Build.VERSION_CODES.O)
     fun onForegroundAppChanged(packageName: String) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -91,6 +121,10 @@ class SessionManager(
                 )
 
                 if (!appsSubmitted || !locationsSubmitted || !bedtimeSubmitted) {
+                    if (shouldSkipEndBecauseReturningToTarget()) {
+                        Log.d("SESSION", "skipping end: returning user to target app (onboarding check)")
+                        return@withLock
+                    }
                     endSessionIfRunningLocked()
                     return@withLock
                 }
@@ -99,11 +133,16 @@ class SessionManager(
                 Log.d("SESSION", "selected apps = $selectedApps")
 
                 if (packageName !in selectedApps) {
+                    if (shouldSkipEndBecauseReturningToTarget()) {
+                        Log.d("SESSION", "skipping end: returning user to target app (not in selected)")
+                        return@withLock
+                    }
                     endSessionIfRunningLocked()
                     return@withLock
                 }
 
                 if (activeSessionId != null && activeApp == packageName) {
+                    pendingReturnToTargetAppPackage = null
                     Log.d("SESSION", "session already active for app = $packageName")
                     return@withLock
                 }
@@ -113,6 +152,11 @@ class SessionManager(
                 val submittedLocations = locationsRepo.locations.first()
                 val activeGeofences = GeofenceContextStore.activeGeofenceIds.value
                 val snapshot = studyRepo.getCurrentStudySnapshot() ?: run {
+                    if (shouldSkipEndBecauseReturningToTarget()) {
+                        Log.d("SESSION", "skipping end: returning user to target app (no snapshot)")
+                        return@withLock
+                    }
+                    Log.d("SESSION", "no active study snapshot (not started or finished); ending any active session")
                     endSessionIfRunningLocked()
                     return@withLock
                 }
@@ -130,6 +174,10 @@ class SessionManager(
                 Log.d("SESSION", "detected context = $detectedContext")
 
                 if (detectedContext == DetectedContext.NONE) {
+                    if (shouldSkipEndBecauseReturningToTarget()) {
+                        Log.d("SESSION", "skipping end: returning user to target app (context NONE)")
+                        return@withLock
+                    }
                     endSessionIfRunningLocked()
                     return@withLock
                 }
