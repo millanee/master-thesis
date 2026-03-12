@@ -10,9 +10,17 @@ import androidx.activity.addCallback
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import com.millane.thesis.application.study.SessionManager
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
 import com.millane.thesis.application.ui.components.ReactanceScaleDialog
@@ -179,11 +188,39 @@ private fun FrictionCountdownScreen(
             .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = secondsLeft.coerceAtLeast(0).toString(),
-            style = MaterialTheme.typography.displayLarge,
-            color = Color.White
-        )
+        val safeSeconds = secondsLeft.coerceAtLeast(0)
+        val dotCount = when (safeSeconds) {
+            6, 3 -> 1
+            5, 2 -> 2
+            4, 1 -> 3
+            else -> 0
+        }
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = safeSeconds.toString(),
+                style = MaterialTheme.typography.displayLarge,
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                modifier = Modifier,
+                textAlign = TextAlign.Start,
+                text = buildAnnotatedString {
+                    append("Take a deep breath")
+                    repeat(3) { idx ->
+                        val visible = idx < dotCount
+                        withStyle(
+                            SpanStyle(color = Color.White.copy(alpha = if (visible) 1f else 0f))
+                        ) {
+                            append(".")
+                        }
+                    }
+                },
+                fontSize = 30.sp,
+                color = Color.White
+            )
+        }
     }
 
     if (showDecisionDialog) {
