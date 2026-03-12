@@ -78,7 +78,11 @@ class SessionManager(
     @Volatile
     private var pendingReturnToTargetTimestampMs: Long = 0L
 
-    private val pendingReturnToTargetWindowMs = 5_000L
+    // Some devices / launchers take several seconds between our Activity finishing and the
+    // target app becoming foreground (especially with task/animation delays). If this window
+    // is too small, we may incorrectly treat the transition as the user "leaving" the app and
+    // trigger context validation on top of the target app.
+    private val pendingReturnToTargetWindowMs = 15_000L
 
     /** Call this before launching the target app from an intervention (e.g. after "Proceed" or "Continue")
      *  so the context confirmation is not shown for the brief transition. */
