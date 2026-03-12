@@ -13,6 +13,20 @@ class FirestoreSessionRepository(
 ) {
     private val sessionsCol = db.collection("sessions")
 
+    private suspend fun updateInterventionAttempts(
+        sessionId: String,
+        update: (List<InterventionAttempt>) -> List<InterventionAttempt>
+    ) {
+        val doc = sessionsCol.document(sessionId)
+        db.runTransaction { tx ->
+            val snap = tx.get(doc)
+            val currentAttempts = parseAttempts(snap.get("interventionAttempts"))
+            val updated = update(currentAttempts)
+            tx.set(doc, mapOf("interventionAttempts" to updated), SetOptions.merge())
+            null
+        }.await()
+    }
+
     suspend fun createSession(session: SessionRecord) {
         sessionsCol
             .document(session.sessionId)
@@ -45,18 +59,9 @@ class FirestoreSessionRepository(
         sessionId: String,
         shownAtMs: Long
     ) {
-        val doc = sessionsCol.document(sessionId)
-        val snap = doc.get().await()
-
-        val currentAttempts = parseAttempts(snap.get("interventionAttempts"))
-        val updated = currentAttempts + InterventionAttempt(
-            shownAtMs = shownAtMs
-        )
-
-        doc.set(
-            mapOf("interventionAttempts" to updated),
-            SetOptions.merge()
-        ).await()
+        updateInterventionAttempts(sessionId) { currentAttempts ->
+            currentAttempts + InterventionAttempt(shownAtMs = shownAtMs)
+        }
     }
 
     suspend fun markLatestInterventionDismissed(
@@ -113,32 +118,36 @@ class FirestoreSessionRepository(
         responses: List<Int>,
         answeredAtMs: Long
     ) {
-        val doc = sessionsCol.document(sessionId)
-        val snap = doc.get().await()
-
-        val currentAttempts = parseAttempts(snap.get("interventionAttempts"))
-        if (currentAttempts.isEmpty()) return
-
-        val lastIndex = currentAttempts.lastIndex
-        val updated = currentAttempts.toMutableList()
-        val last = updated[lastIndex]
-
         val mean = if (responses.isNotEmpty()) {
             responses.average()
         } else {
             null
         }
 
-        updated[lastIndex] = last.copy(
-            reactanceAnsweredAtMs = answeredAtMs,
-            reactanceResponses = responses,
-            reactanceMeanScore = mean
-        )
-
-        doc.set(
-            mapOf("interventionAttempts" to updated),
-            SetOptions.merge()
-        ).await()
+        updateInterventionAttempts(sessionId) { currentAttempts ->
+            // This avoids a race where reactance is submitted before the "shown" attempt
+            // has been persisted (e.g., slow network / offline / very fast user).
+            if (currentAttempts.isEmpty()) {
+                listOf(
+                    InterventionAttempt(
+                        shownAtMs = answeredAtMs,
+                        reactanceAnsweredAtMs = answeredAtMs,
+                        reactanceResponses = responses,
+                        reactanceMeanScore = mean
+                    )
+                )
+            } else {
+                val lastIndex = currentAttempts.lastIndex
+                val updated = currentAttempts.toMutableList()
+                val last = updated[lastIndex]
+                updated[lastIndex] = last.copy(
+                    reactanceAnsweredAtMs = answeredAtMs,
+                    reactanceResponses = responses,
+                    reactanceMeanScore = mean
+                )
+                updated
+            }
+        }
     }
 
     suspend fun setContextValidationStatus(
