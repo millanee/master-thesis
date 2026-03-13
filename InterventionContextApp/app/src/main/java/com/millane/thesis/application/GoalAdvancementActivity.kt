@@ -67,6 +67,7 @@ class GoalAdvancementActivity : ComponentActivity() {
 
         val targetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE).orEmpty()
         val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
+        val sessionOpenedAtMs = intent.getLongExtra(EXTRA_SESSION_OPENED_AT_MS, System.currentTimeMillis())
         val pendingReactanceStore = PendingReactanceStore(applicationContext)
         sessionManager.markGoalAdvancementShown()
 
@@ -82,6 +83,7 @@ class GoalAdvancementActivity : ComponentActivity() {
                 GoalAdvancementScreen(
                     targetPackage = targetPackage,
                     goals = goals,
+                    sessionOpenedAtMs = sessionOpenedAtMs,
                     showReactanceFromHome = showReactanceFromHomeState.value,
                     onChoiceMade = { if (!userChoiceMade) userChoiceMade = true },
                     onReactanceSubmittedGoHome = { responses ->
@@ -106,6 +108,7 @@ class GoalAdvancementActivity : ComponentActivity() {
     companion object {
         const val EXTRA_TARGET_PACKAGE = "com.millane.thesis.application.extra.GOAL_ADVANCEMENT_TARGET_PACKAGE"
         const val EXTRA_SESSION_ID = "com.millane.thesis.application.extra.GOAL_ADVANCEMENT_SESSION_ID"
+        const val EXTRA_SESSION_OPENED_AT_MS = "com.millane.thesis.application.extra.GOAL_ADVANCEMENT_OPENED_AT_MS"
     }
 }
 
@@ -113,6 +116,7 @@ class GoalAdvancementActivity : ComponentActivity() {
 private fun GoalAdvancementScreen(
     targetPackage: String,
     goals: List<String>,
+    sessionOpenedAtMs: Long,
     showReactanceFromHome: Boolean,
     onChoiceMade: () -> Unit,
     onReactanceSubmittedGoHome: (List<Int>) -> Unit,
@@ -174,9 +178,12 @@ private fun GoalAdvancementScreen(
             if (goals.isEmpty()) emptyList()
             else listOf("Your goals for today:") + goals
 
+        val sessionDurationMinutes =
+            ((System.currentTimeMillis() - sessionOpenedAtMs) / 60_000L).coerceAtLeast(0L).toInt()
+
         ConfirmationAndInterventionDialog(
             title = "Work on a goal?",
-            message = "You've been using this app for 15 minutes. Would you like to work on something from your goals list instead?",
+            message = "You've been using this app for $sessionDurationMinutes minute${if (sessionDurationMinutes == 1) "" else "s"}. Would you like to work on something from your goals list instead?",
             bullets = bullets,
             confirmLabel = "Close app",
             dismissLabel = "Continue using app",

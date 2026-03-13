@@ -640,6 +640,7 @@ class SessionManager(
     private fun maybeLaunchGoalAdvancement() {
         val targetPackage = activeApp ?: return
         val sessionId = activeSessionId ?: return
+        val openedAtMs = activeSessionOpenedAtMs ?: System.currentTimeMillis()
         pendingInterventionLaunchAtMs = System.currentTimeMillis()
         val intent = Intent(context, GoalAdvancementActivity::class.java).apply {
             addFlags(
@@ -649,6 +650,7 @@ class SessionManager(
             )
             putExtra(GoalAdvancementActivity.EXTRA_TARGET_PACKAGE, targetPackage)
             putExtra(GoalAdvancementActivity.EXTRA_SESSION_ID, sessionId)
+            putExtra(GoalAdvancementActivity.EXTRA_SESSION_OPENED_AT_MS, openedAtMs)
         }
         context.startActivity(intent)
         Log.d("SESSION", "launched GoalAdvancementActivity for $targetPackage")
