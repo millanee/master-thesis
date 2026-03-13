@@ -38,6 +38,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.lifecycleScope
+import com.millane.thesis.application.data.reactance.PendingReactanceStore
 import com.millane.thesis.application.data.usage.SelfTrackingUsageRepository
 import com.millane.thesis.application.data.usage.SelfTrackingUsageSnapshot
 import com.millane.thesis.application.study.SessionManager
@@ -48,6 +50,7 @@ import com.millane.thesis.application.ui.theme.SecondaryText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -80,6 +83,8 @@ class SelfTrackingActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this) { }
 
         val targetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE).orEmpty()
+        val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
+        val pendingReactanceStore = PendingReactanceStore(applicationContext)
         val openedAtMs = intent.getLongExtra(EXTRA_SESSION_OPENED_AT_MS, System.currentTimeMillis())
         val isHome = intent.getBooleanExtra(EXTRA_SESSION_IS_HOME, false)
 
@@ -95,14 +100,18 @@ class SelfTrackingActivity : ComponentActivity() {
                     showReactanceFromHome = showReactanceFromHomeState.value,
                     onChoiceMade = { if (!userChoiceMade) userChoiceMade = true },
                     onReactanceSubmittedGoHome = { responses ->
-                        sessionManager.saveReactanceResponses(responses)
-                        navigateHomeAndClose()
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            sessionId?.let { pendingReactanceStore.store(it, responses) }
+                            withContext(Dispatchers.Main) { navigateHomeAndClose() }
+                        }
                     },
                     onReactanceSubmittedContinue = { responses ->
-                        sessionManager.saveReactanceResponses(responses)
-                        sessionManager.markSelfTrackingDismissed()
-                        sessionManager.scheduleNextSelfTrackingTrigger()
-                        launchTargetAppAndFinish(targetPackage)
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            sessionManager.saveReactanceResponsesForSessionSync(sessionId, responses)
+                            sessionManager.markSelfTrackingDismissed()
+                            sessionManager.scheduleNextSelfTrackingTrigger()
+                            withContext(Dispatchers.Main) { launchTargetAppAndFinish(targetPackage) }
+                        }
                     }
                 )
             }
@@ -112,6 +121,8 @@ class SelfTrackingActivity : ComponentActivity() {
     companion object {
         const val EXTRA_TARGET_PACKAGE =
             "com.millane.thesis.application.extra.SELF_TRACKING_TARGET_PACKAGE"
+        const val EXTRA_SESSION_ID =
+            "com.millane.thesis.application.extra.SELF_TRACKING_SESSION_ID"
         const val EXTRA_SESSION_OPENED_AT_MS =
             "com.millane.thesis.application.extra.SELF_TRACKING_OPENED_AT_MS"
         const val EXTRA_SESSION_IS_HOME =

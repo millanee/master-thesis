@@ -65,6 +65,12 @@ class SessionManager(
     private val selfTrackingDelayMs = 1 * 60 * 1000L // 1 min for testing (was 15)
     private var selfTrackingRunnable: Runnable? = null
 
+    /**
+     * Some devices/launchers briefly report the launcher as foreground while an app is opening.
+     * Without a guard, this can immediately end a just-started session and show the context dialog.
+     */
+    private val minSessionDurationForContextValidationMs = 5_000L
+
     /** Prevents double-launch when accessibility events fire multiple times quickly. */
     @Volatile
     private var dailyGoalsPromptLaunchInProgress: Boolean = false
@@ -103,6 +109,44 @@ class SessionManager(
         return elapsed in 0..pendingReturnToTargetWindowMs
     }
 
+    /** Set right before launching an intervention activity. Some devices briefly report launcher
+     *  as foreground during the transition; we skip ending the session in that window. */
+    @Volatile
+    private var pendingInterventionLaunchAtMs: Long = 0L
+
+    private val pendingInterventionLaunchWindowMs = 5_000L
+
+    /** Debounce: only end session after user has been away from target app for this long.
+     *  Filters out spurious launcher events that fire while user is still in the target app. */
+    private val leaveDebounceMs = 2_500L
+    private var pendingEndSessionRunnable: Runnable? = null
+
+    private fun cancelPendingEndSession() {
+        pendingEndSessionRunnable?.let { mainHandler.removeCallbacks(it) }
+        pendingEndSessionRunnable = null
+    }
+
+    private fun scheduleEndSessionDebounced() {
+        cancelPendingEndSession()
+        pendingEndSessionRunnable = Runnable {
+            pendingEndSessionRunnable = null
+            CoroutineScope(Dispatchers.IO).launch {
+                sessionMutex.withLock {
+                    endSessionIfRunningLocked()
+                }
+            }
+        }
+        mainHandler.postDelayed(pendingEndSessionRunnable!!, leaveDebounceMs)
+        Log.d("SESSION", "scheduled end session in ${leaveDebounceMs}ms (debounce)")
+    }
+
+    private fun shouldSkipEndBecauseInterventionLaunchInProgress(): Boolean {
+        val at = pendingInterventionLaunchAtMs
+        if (at == 0L) return false
+        val elapsed = System.currentTimeMillis() - at
+        return elapsed in 0..pendingInterventionLaunchWindowMs
+    }
+
     @RequiresApi(Build.VERSION_CODES.O)
     fun onForegroundAppChanged(packageName: String) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -111,6 +155,8 @@ class SessionManager(
 
                 // Don't end session when our app comes to foreground (e.g. FrictionActivity).
                 if (packageName == context.packageName) {
+                    cancelPendingEndSession()
+                    pendingInterventionLaunchAtMs = 0L
                     Log.d("SESSION", "Foreground is our app, keeping session alive")
                     return@withLock
                 }
@@ -129,7 +175,11 @@ class SessionManager(
                         Log.d("SESSION", "skipping end: returning user to target app (onboarding check)")
                         return@withLock
                     }
-                    endSessionIfRunningLocked()
+                    if (shouldSkipEndBecauseInterventionLaunchInProgress()) {
+                        Log.d("SESSION", "skipping end: intervention launch in progress (onboarding check)")
+                        return@withLock
+                    }
+                    scheduleEndSessionDebounced()
                     return@withLock
                 }
 
@@ -141,11 +191,16 @@ class SessionManager(
                         Log.d("SESSION", "skipping end: returning user to target app (not in selected)")
                         return@withLock
                     }
-                    endSessionIfRunningLocked()
+                    if (shouldSkipEndBecauseInterventionLaunchInProgress()) {
+                        Log.d("SESSION", "skipping end: intervention launch in progress (launcher during transition)")
+                        return@withLock
+                    }
+                    scheduleEndSessionDebounced()
                     return@withLock
                 }
 
                 if (activeSessionId != null && activeApp == packageName) {
+                    cancelPendingEndSession()
                     pendingReturnToTargetAppPackage = null
                     Log.d("SESSION", "session already active for app = $packageName")
                     return@withLock
@@ -160,8 +215,12 @@ class SessionManager(
                         Log.d("SESSION", "skipping end: returning user to target app (no snapshot)")
                         return@withLock
                     }
+                    if (shouldSkipEndBecauseInterventionLaunchInProgress()) {
+                        Log.d("SESSION", "skipping end: intervention launch in progress (no snapshot)")
+                        return@withLock
+                    }
                     Log.d("SESSION", "no active study snapshot (not started or finished); ending any active session")
-                    endSessionIfRunningLocked()
+                    scheduleEndSessionDebounced()
                     return@withLock
                 }
 
@@ -177,16 +236,9 @@ class SessionManager(
 
                 Log.d("SESSION", "detected context = $detectedContext")
 
-                if (detectedContext == DetectedContext.NONE) {
-                    if (shouldSkipEndBecauseReturningToTarget()) {
-                        Log.d("SESSION", "skipping end: returning user to target app (context NONE)")
-                        return@withLock
-                    }
-                    endSessionIfRunningLocked()
-                    return@withLock
-                }
-
                 // Goal Advancement: first target-app open after 4 AM should prompt for daily goals.
+                // Check this BEFORE the context check so we show the prompt even when geofences
+                // haven't fired yet (e.g. first open of the day right after unlocking).
                 if (snapshot.activeInterventionType == InterventionType.GOAL_ADVANCEMENT) {
                     val launchedPrompt = maybeLaunchDailyGoalsPromptForNewDay(packageName)
                     // If we showed the prompt, don't start a session yet; we'll start it
@@ -194,6 +246,28 @@ class SessionManager(
                     if (launchedPrompt) {
                         return@withLock
                     }
+                }
+
+                if (detectedContext == DetectedContext.NONE) {
+                    // Allow session start when returning from goal prompt even with NONE context
+                    // (geofences may not have fired yet when user confirms goals and returns to target app).
+                    val boundaryMs = getCurrentStudyDayBoundary4AmMs()
+                    val lastPrompted = goalsRepo.getLastDailyGoalsPromptDayMs()
+                    val returningFromGoalPrompt = snapshot.activeInterventionType == InterventionType.GOAL_ADVANCEMENT &&
+                        lastPrompted == boundaryMs
+                    if (!returningFromGoalPrompt) {
+                        if (shouldSkipEndBecauseReturningToTarget()) {
+                            Log.d("SESSION", "skipping end: returning user to target app (context NONE)")
+                            return@withLock
+                        }
+                        if (shouldSkipEndBecauseInterventionLaunchInProgress()) {
+                            Log.d("SESSION", "skipping end: intervention launch in progress (context NONE)")
+                            return@withLock
+                        }
+                        scheduleEndSessionDebounced()
+                        return@withLock
+                    }
+                    Log.d("SESSION", "context NONE but returning from goal prompt; allowing session start")
                 }
 
                 // Self-tracking: touching stats here ensures they are reset on first open after 4 AM.
@@ -270,6 +344,31 @@ class SessionManager(
                 answeredAtMs = System.currentTimeMillis()
             )
             Log.d("SESSION", "saved reactance for session=$sessionId responses=$responses")
+        }
+    }
+
+    fun saveReactanceResponsesForSession(sessionId: String?, responses: List<Int>) {
+        val safeId = sessionId ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            sessionRepo.saveLatestReactanceResponses(
+                sessionId = safeId,
+                responses = responses,
+                answeredAtMs = System.currentTimeMillis()
+            )
+            Log.d("SESSION", "saved reactance for session=$safeId responses=$responses")
+        }
+    }
+
+    /** Suspend version: saves to Firebase and returns when done. Use before navigating so the save completes. */
+    suspend fun saveReactanceResponsesForSessionSync(sessionId: String?, responses: List<Int>) {
+        val safeId = sessionId ?: return
+        withContext(Dispatchers.IO) {
+            sessionRepo.saveLatestReactanceResponses(
+                sessionId = safeId,
+                responses = responses,
+                answeredAtMs = System.currentTimeMillis()
+            )
+            Log.d("SESSION", "saved reactance for session=$safeId responses=$responses")
         }
     }
 
@@ -362,21 +461,31 @@ class SessionManager(
         val id = activeSessionId ?: return
 
         try {
-            // Launch the context confirmation dialog as early as possible so it appears
-            // quickly after the user presses Home.
-            withContext(Dispatchers.Main.immediate) {
-                val intent = Intent(context, ContextValidationActivity::class.java).apply {
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                            Intent.FLAG_ACTIVITY_NO_ANIMATION
-                    )
-                    putExtra(ContextValidationActivity.EXTRA_SESSION_ID, id)
-                }
-                context.startActivity(intent)
-            }
-
             val closedAtMs = System.currentTimeMillis()
+            val openedAtMs = activeSessionOpenedAtMs
+            val durationMs = openedAtMs?.let { closedAtMs - it }
+
+            // Launch the context confirmation dialog as early as possible so it appears
+            // quickly after the user presses Home. Guard against very short sessions that are
+            // likely caused by transient launcher/animation switches during app opening.
+            if (durationMs == null || durationMs >= minSessionDurationForContextValidationMs) {
+                withContext(Dispatchers.Main.immediate) {
+                    val intent = Intent(context, ContextValidationActivity::class.java).apply {
+                        addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                Intent.FLAG_ACTIVITY_NO_ANIMATION
+                        )
+                        putExtra(ContextValidationActivity.EXTRA_SESSION_ID, id)
+                    }
+                    context.startActivity(intent)
+                }
+            } else {
+                Log.d(
+                    "SESSION",
+                    "skipping context validation (durationMs=$durationMs < $minSessionDurationForContextValidationMs)"
+                )
+            }
 
             // Re-detect context at the moment the session ends so we can
             // compare it with the context at session start in Firestore.
@@ -416,6 +525,7 @@ class SessionManager(
         } catch (e: Exception) {
             Log.e("SESSION", "failed to end session $id", e)
         } finally {
+            cancelPendingEndSession()
             activeSessionId = null
             activeApp = null
             activeSessionOpenedAtMs = null
@@ -529,7 +639,8 @@ class SessionManager(
 
     private fun maybeLaunchGoalAdvancement() {
         val targetPackage = activeApp ?: return
-        if (activeSessionId == null) return
+        val sessionId = activeSessionId ?: return
+        pendingInterventionLaunchAtMs = System.currentTimeMillis()
         val intent = Intent(context, GoalAdvancementActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -537,6 +648,7 @@ class SessionManager(
                     Intent.FLAG_ACTIVITY_NO_ANIMATION
             )
             putExtra(GoalAdvancementActivity.EXTRA_TARGET_PACKAGE, targetPackage)
+            putExtra(GoalAdvancementActivity.EXTRA_SESSION_ID, sessionId)
         }
         context.startActivity(intent)
         Log.d("SESSION", "launched GoalAdvancementActivity for $targetPackage")
@@ -546,7 +658,8 @@ class SessionManager(
         val targetPackage = activeApp ?: return
         val openedAt = activeSessionOpenedAtMs ?: System.currentTimeMillis()
         val isHome = activeLocationAtStart == LocationContextType.HOME
-        if (activeSessionId == null) return
+        val sessionId = activeSessionId ?: return
+        pendingInterventionLaunchAtMs = System.currentTimeMillis()
         val intent = Intent(context, SelfTrackingActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -556,6 +669,7 @@ class SessionManager(
             putExtra(SelfTrackingActivity.EXTRA_TARGET_PACKAGE, targetPackage)
             putExtra(SelfTrackingActivity.EXTRA_SESSION_OPENED_AT_MS, openedAt)
             putExtra(SelfTrackingActivity.EXTRA_SESSION_IS_HOME, isHome)
+            putExtra(SelfTrackingActivity.EXTRA_SESSION_ID, sessionId)
         }
         context.startActivity(intent)
         Log.d("SESSION", "launched SelfTrackingActivity for $targetPackage")
@@ -564,9 +678,11 @@ class SessionManager(
     private fun maybeLaunchDesignFriction() {
         if (!shouldShowDesignFriction() || designFrictionLaunchInProgress) return
         val targetPackage = activeApp ?: return
+        val sessionId = activeSessionId ?: return
 
         // Prevent a second FrictionActivity if accessibility events fire again before onCreate runs.
         designFrictionLaunchInProgress = true
+        pendingInterventionLaunchAtMs = System.currentTimeMillis()
 
         val intent = Intent(context, FrictionActivity::class.java).apply {
             addFlags(
@@ -575,6 +691,7 @@ class SessionManager(
                     Intent.FLAG_ACTIVITY_NO_ANIMATION
             )
             putExtra(FrictionActivity.EXTRA_TARGET_PACKAGE, targetPackage)
+            putExtra(FrictionActivity.EXTRA_SESSION_ID, sessionId)
         }
 
         context.startActivity(intent)

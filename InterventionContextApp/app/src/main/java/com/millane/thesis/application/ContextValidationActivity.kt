@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.lifecycleScope
 import com.google.firebase.firestore.FirebaseFirestore
+import com.millane.thesis.application.data.reactance.PendingReactanceStore
 import com.millane.thesis.application.data.study.FirestoreSessionRepository
 import com.millane.thesis.application.study.ContextValidationStatus
 import com.millane.thesis.application.ui.theme.InterventionContextAppTheme
@@ -35,6 +36,7 @@ import java.util.Locale
 class ContextValidationActivity : ComponentActivity() {
 
     private val sessionRepo by lazy { FirestoreSessionRepository(FirebaseFirestore.getInstance()) }
+    private val pendingReactanceStore by lazy { PendingReactanceStore(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,6 +69,17 @@ class ContextValidationActivity : ComponentActivity() {
             }
             runCatching {
                 sessionRepo.setContextValidationStatus(sessionId, status)
+            }
+            // Save any pending reactance (stored when user chose "Go home" in intervention)
+            val pendingResponses = pendingReactanceStore.takeForSession(sessionId)
+            if (pendingResponses != null) {
+                runCatching {
+                    sessionRepo.saveLatestReactanceResponses(
+                        sessionId = sessionId,
+                        responses = pendingResponses,
+                        answeredAtMs = System.currentTimeMillis()
+                    )
+                }
             }
             launch(Dispatchers.Main) {
                 navigateHomeAndClose()

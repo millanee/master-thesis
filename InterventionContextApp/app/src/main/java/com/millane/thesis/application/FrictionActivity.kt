@@ -31,11 +31,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
+import com.millane.thesis.application.data.reactance.PendingReactanceStore
 import com.millane.thesis.application.study.SessionManager
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
 import com.millane.thesis.application.ui.components.ReactanceScaleDialog
 import com.millane.thesis.application.ui.theme.InterventionContextAppTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class FrictionActivity : ComponentActivity() {
 
@@ -76,6 +81,8 @@ class FrictionActivity : ComponentActivity() {
         }
 
         val targetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE).orEmpty()
+        val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
+        val pendingReactanceStore = PendingReactanceStore(applicationContext)
 
         // Record that the design friction intervention was shown (creates intervention attempt with shownAtMs).
         sessionManager.markDesignFrictionShown()
@@ -89,12 +96,16 @@ class FrictionActivity : ComponentActivity() {
                         if (!userChoiceMade) userChoiceMade = true
                     },
                     onReactanceSubmittedGoHome = { responses ->
-                        sessionManager.saveReactanceResponses(responses)
-                        navigateHomeAndClose()
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            sessionId?.let { pendingReactanceStore.store(it, responses) }
+                            withContext(Dispatchers.Main) { navigateHomeAndClose() }
+                        }
                     },
                     onReactanceSubmittedLaunchTarget = { responses, pkg ->
-                        sessionManager.saveReactanceResponses(responses)
-                        launchTargetAppAndFinish(pkg)
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            sessionManager.saveReactanceResponsesForSessionSync(sessionId, responses)
+                            withContext(Dispatchers.Main) { launchTargetAppAndFinish(pkg) }
+                        }
                     }
                 )
             }
@@ -103,6 +114,7 @@ class FrictionActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_TARGET_PACKAGE = "com.millane.thesis.application.extra.TARGET_PACKAGE"
+        const val EXTRA_SESSION_ID = "com.millane.thesis.application.extra.FRICTION_SESSION_ID"
     }
 }
 

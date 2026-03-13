@@ -19,13 +19,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.lifecycle.lifecycleScope
 import com.millane.thesis.application.data.dailygoals.DailyGoalsRepository
+import com.millane.thesis.application.data.reactance.PendingReactanceStore
 import com.millane.thesis.application.study.SessionManager
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
 import com.millane.thesis.application.ui.components.ReactanceScaleDialog
 import com.millane.thesis.application.ui.theme.InterventionContextAppTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 /**
  * Shown after the user has been in a target app for 15 minutes (goal advancement intervention).
@@ -61,6 +66,8 @@ class GoalAdvancementActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this) { }
 
         val targetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE).orEmpty()
+        val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
+        val pendingReactanceStore = PendingReactanceStore(applicationContext)
         sessionManager.markGoalAdvancementShown()
 
         val goalsRepo = DailyGoalsRepository(applicationContext)
@@ -78,14 +85,18 @@ class GoalAdvancementActivity : ComponentActivity() {
                     showReactanceFromHome = showReactanceFromHomeState.value,
                     onChoiceMade = { if (!userChoiceMade) userChoiceMade = true },
                     onReactanceSubmittedGoHome = { responses ->
-                        sessionManager.saveReactanceResponses(responses)
-                        navigateHomeAndClose()
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            sessionId?.let { pendingReactanceStore.store(it, responses) }
+                            withContext(Dispatchers.Main) { navigateHomeAndClose() }
+                        }
                     },
                     onReactanceSubmittedContinue = { responses ->
-                        sessionManager.saveReactanceResponses(responses)
-                        sessionManager.markGoalAdvancementDismissed()
-                        sessionManager.scheduleNextGoalAdvancementTrigger()
-                        launchTargetAppAndFinish(targetPackage)
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            sessionManager.saveReactanceResponsesForSessionSync(sessionId, responses)
+                            sessionManager.markGoalAdvancementDismissed()
+                            sessionManager.scheduleNextGoalAdvancementTrigger()
+                            withContext(Dispatchers.Main) { launchTargetAppAndFinish(targetPackage) }
+                        }
                     }
                 )
             }
@@ -94,6 +105,7 @@ class GoalAdvancementActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_TARGET_PACKAGE = "com.millane.thesis.application.extra.GOAL_ADVANCEMENT_TARGET_PACKAGE"
+        const val EXTRA_SESSION_ID = "com.millane.thesis.application.extra.GOAL_ADVANCEMENT_SESSION_ID"
     }
 }
 
