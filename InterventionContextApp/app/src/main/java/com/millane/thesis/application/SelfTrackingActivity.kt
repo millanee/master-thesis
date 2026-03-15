@@ -39,7 +39,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.lifecycleScope
-import com.millane.thesis.application.data.reactance.PendingReactanceStore
 import com.millane.thesis.application.data.usage.SelfTrackingUsageRepository
 import com.millane.thesis.application.data.usage.SelfTrackingUsageSnapshot
 import com.millane.thesis.application.study.SessionManager
@@ -84,10 +83,10 @@ class SelfTrackingActivity : ComponentActivity() {
 
         val targetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE).orEmpty()
         val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
-        val pendingReactanceStore = PendingReactanceStore(applicationContext)
         val openedAtMs = intent.getLongExtra(EXTRA_SESSION_OPENED_AT_MS, System.currentTimeMillis())
         val isHome = intent.getBooleanExtra(EXTRA_SESSION_IS_HOME, false)
 
+        sessionManager.markInterventionUiVisible()
         sessionManager.markSelfTrackingShown()
 
         setContent {
@@ -99,10 +98,15 @@ class SelfTrackingActivity : ComponentActivity() {
                     usageRepo = usageRepo,
                     showReactanceFromHome = showReactanceFromHomeState.value,
                     onChoiceMade = { if (!userChoiceMade) userChoiceMade = true },
-                    onReactanceSubmittedGoHome = { responses ->
+                    onReactanceSubmittedCloseApp = { responses ->
                         lifecycleScope.launch(Dispatchers.IO) {
-                            sessionId?.let { pendingReactanceStore.store(it, responses) }
-                            withContext(Dispatchers.Main) { navigateHomeAndClose() }
+                            sessionManager.saveReactanceResponsesForSessionSync(sessionId, responses)
+                            sessionManager.markClosedViaIntervention()
+                            withContext(Dispatchers.Main) {
+                                sessionManager.markInterventionUiHidden()
+                                sessionManager.launchContextValidationForSession(sessionId)
+                                finishAndRemoveTask()
+                            }
                         }
                     },
                     onReactanceSubmittedContinue = { responses ->
@@ -110,7 +114,10 @@ class SelfTrackingActivity : ComponentActivity() {
                             sessionManager.saveReactanceResponsesForSessionSync(sessionId, responses)
                             sessionManager.markSelfTrackingDismissed()
                             sessionManager.scheduleNextSelfTrackingTrigger()
-                            withContext(Dispatchers.Main) { launchTargetAppAndFinish(targetPackage) }
+                            withContext(Dispatchers.Main) {
+                                sessionManager.markInterventionUiHidden()
+                                launchTargetAppAndFinish(targetPackage)
+                            }
                         }
                     }
                 )
@@ -138,7 +145,7 @@ private fun SelfTrackingScreen(
     usageRepo: SelfTrackingUsageRepository,
     showReactanceFromHome: Boolean,
     onChoiceMade: () -> Unit,
-    onReactanceSubmittedGoHome: (List<Int>) -> Unit,
+    onReactanceSubmittedCloseApp: (List<Int>) -> Unit,
     onReactanceSubmittedContinue: (List<Int>) -> Unit
 ) {
     var showReactanceDialog by rememberSaveable { mutableStateOf(false) }
@@ -171,7 +178,7 @@ private fun SelfTrackingScreen(
                 reactanceSelections =
                     reactanceSelections.toMutableList().apply { set(index, value) }
             },
-            onSubmit = { onReactanceSubmittedGoHome(it) }
+            onSubmit = { onReactanceSubmittedCloseApp(it) }
         )
         return
     }
@@ -191,7 +198,7 @@ private fun SelfTrackingScreen(
             },
             onSubmit = { responses ->
                 if (pendingGoHome) {
-                    onReactanceSubmittedGoHome(responses)
+                    onReactanceSubmittedCloseApp(responses)
                 } else {
                     onReactanceSubmittedContinue(responses)
                 }
@@ -489,16 +496,6 @@ private fun DialogButton(
             )
         }
     }
-}
-
-private fun SelfTrackingActivity.navigateHomeAndClose() {
-    sessionManager.markClosedViaIntervention()
-    val intent = Intent(Intent.ACTION_MAIN).apply {
-        addCategory(Intent.CATEGORY_HOME)
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-    }
-    startActivity(intent)
-    finishAndRemoveTask()
 }
 
 private fun SelfTrackingActivity.launchTargetAppAndFinish(targetPackage: String) {

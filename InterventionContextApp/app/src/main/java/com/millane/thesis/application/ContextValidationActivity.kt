@@ -43,6 +43,8 @@ class ContextValidationActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
+        val launchTargetPackageAfterSubmit =
+            intent.getStringExtra(EXTRA_LAUNCH_TARGET_PACKAGE_AFTER_SUBMIT)
         if (sessionId.isNullOrEmpty()) {
             finish()
             return
@@ -53,14 +55,18 @@ class ContextValidationActivity : ComponentActivity() {
                 ContextValidationScreen(
                     sessionId = sessionId,
                     onAnswer = { confirmed ->
-                        saveAnswerAndClose(sessionId, confirmed)
+                        saveAnswerAndClose(sessionId, confirmed, launchTargetPackageAfterSubmit)
                     }
                 )
             }
         }
     }
 
-    private fun saveAnswerAndClose(sessionId: String, confirmed: Boolean) {
+    private fun saveAnswerAndClose(
+        sessionId: String,
+        confirmed: Boolean,
+        launchTargetPackageAfterSubmit: String?
+    ) {
         lifecycleScope.launch(Dispatchers.IO) {
             val status = if (confirmed) {
                 ContextValidationStatus.CONFIRMED
@@ -82,7 +88,11 @@ class ContextValidationActivity : ComponentActivity() {
                 }
             }
             launch(Dispatchers.Main) {
-                navigateHomeAndClose()
+                if (!launchTargetPackageAfterSubmit.isNullOrEmpty()) {
+                    launchTargetAppAndClose(launchTargetPackageAfterSubmit)
+                } else {
+                    navigateHomeAndClose()
+                }
             }
         }
     }
@@ -90,6 +100,8 @@ class ContextValidationActivity : ComponentActivity() {
     companion object {
         const val EXTRA_SESSION_ID =
             "com.millane.thesis.application.extra.CONTEXT_VALIDATION_SESSION_ID"
+        const val EXTRA_LAUNCH_TARGET_PACKAGE_AFTER_SUBMIT =
+            "com.millane.thesis.application.extra.CONTEXT_VALIDATION_LAUNCH_TARGET_AFTER_SUBMIT"
     }
 }
 
@@ -99,6 +111,26 @@ private fun ContextValidationActivity.navigateHomeAndClose() {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
     startActivity(intent)
+    finishAndRemoveTask()
+}
+
+private fun ContextValidationActivity.launchTargetAppAndClose(targetPackage: String) {
+    val packageToLaunch = targetPackage.takeIf { it.isNotEmpty() && it != packageName }
+    if (packageToLaunch != null) {
+        (applicationContext as ThesisApp).sessionManager.notifyReturningUserToTargetApp(packageToLaunch)
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageToLaunch)
+        if (launchIntent != null) {
+            launchIntent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
+            startActivity(launchIntent)
+        } else {
+            navigateHomeAndClose()
+            return
+        }
+    }
     finishAndRemoveTask()
 }
 

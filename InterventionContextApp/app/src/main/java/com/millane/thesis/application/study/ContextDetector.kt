@@ -43,9 +43,9 @@ object ContextDetector {
                 val end = LocalTime.of(4, 0)
 
                 if (start.isBefore(end)) {
-                    now.isAfter(start) && now.isBefore(end)
+                    !now.isBefore(start) && now.isBefore(end)
                 } else {
-                    now.isAfter(start) || now.isBefore(end)
+                    !now.isBefore(start) || now.isBefore(end)
                 }
             } else {
                 false
@@ -63,7 +63,7 @@ object ContextDetector {
         return when (ctx) {
             DetectedContext.HOME -> LocationContextType.HOME
             DetectedContext.WORK -> LocationContextType.WORK
-            DetectedContext.BEDTIME -> LocationContextType.HOME
+            DetectedContext.BEDTIME -> LocationContextType.BEDTIME
             DetectedContext.NONE -> null
         }
     }

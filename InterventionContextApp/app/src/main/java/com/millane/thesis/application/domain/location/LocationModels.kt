@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 import java.util.UUID
 
 @Serializable
-enum class LocationContextType { WORK, HOME }
+enum class LocationContextType { WORK, HOME, BEDTIME }
 
 @Serializable
 data class LocationEntry(

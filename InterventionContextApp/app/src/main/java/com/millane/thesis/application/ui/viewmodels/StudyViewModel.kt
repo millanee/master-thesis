@@ -7,6 +7,8 @@ import com.millane.thesis.application.data.study.StudyRepository
 import com.millane.thesis.application.study.InterventionType
 import com.millane.thesis.application.study.StudyGroup
 import com.millane.thesis.application.study.StudyManager
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -32,15 +34,21 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = StudyRepository(app.applicationContext)
 
+    private val clock = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(1_000L)
+        }
+    }
+
     val snapshot: StateFlow<StudySnapshot> =
-        combine(repo.participantId, repo.group, repo.startDateMs) { pid, group, start ->
+        combine(repo.participantId, repo.group, repo.startDateMs, clock) { pid, group, start, now ->
             if (pid == null || group == null || start == null) {
                 StudySnapshot(participantId = pid, group = group, startDateMs = start)
             } else {
-                val now = System.currentTimeMillis()
                 val status = when {
                     now < start -> StudyStatus.NOT_STARTED
-                    StudyManager.studyDayIndex(start, now) >= StudyManager.TOTAL_INTERVENTION_DAYS -> StudyStatus.COMPLETED
+                    StudyManager.isStudyComplete(start, now) -> StudyStatus.COMPLETED
                     else -> StudyStatus.IN_PROGRESS
                 }
 

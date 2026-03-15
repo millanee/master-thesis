@@ -32,7 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
-import com.millane.thesis.application.data.reactance.PendingReactanceStore
 import com.millane.thesis.application.study.SessionManager
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
 import com.millane.thesis.application.ui.components.ReactanceScaleDialog
@@ -82,8 +81,8 @@ class FrictionActivity : ComponentActivity() {
 
         val targetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE).orEmpty()
         val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
-        val pendingReactanceStore = PendingReactanceStore(applicationContext)
 
+        sessionManager.markInterventionUiVisible()
         // Record that the design friction intervention was shown (creates intervention attempt with shownAtMs).
         sessionManager.markDesignFrictionShown()
 
@@ -95,16 +94,29 @@ class FrictionActivity : ComponentActivity() {
                     onChoiceMade = {
                         if (!userChoiceMade) userChoiceMade = true
                     },
-                    onReactanceSubmittedGoHome = { responses ->
+                    onReactanceSubmittedCloseApp = { responses ->
                         lifecycleScope.launch(Dispatchers.IO) {
-                            sessionId?.let { pendingReactanceStore.store(it, responses) }
-                            withContext(Dispatchers.Main) { navigateHomeAndClose() }
+                            sessionManager.saveReactanceResponsesForSessionSync(sessionId, responses)
+                            sessionManager.markClosedViaIntervention()
+                            withContext(Dispatchers.Main) {
+                                sessionManager.markInterventionUiHidden()
+                                sessionManager.launchContextValidationForSession(sessionId)
+                                finishAndRemoveTask()
+                            }
                         }
                     },
                     onReactanceSubmittedLaunchTarget = { responses, pkg ->
                         lifecycleScope.launch(Dispatchers.IO) {
                             sessionManager.saveReactanceResponsesForSessionSync(sessionId, responses)
-                            withContext(Dispatchers.Main) { launchTargetAppAndFinish(pkg) }
+                            sessionManager.markDesignFrictionDismissed()
+                            withContext(Dispatchers.Main) {
+                                sessionManager.markInterventionUiHidden()
+                                sessionManager.launchContextValidationForSession(
+                                    sessionId = sessionId,
+                                    launchTargetPackageAfterSubmit = pkg
+                                )
+                                finishAndRemoveTask()
+                            }
                         }
                     }
                 )
@@ -123,7 +135,7 @@ private fun FrictionCountdownScreen(
     targetPackage: String,
     showReactanceFromHome: Boolean,
     onChoiceMade: () -> Unit,
-    onReactanceSubmittedGoHome: (List<Int>) -> Unit,
+    onReactanceSubmittedCloseApp: (List<Int>) -> Unit,
     onReactanceSubmittedLaunchTarget: (List<Int>, String) -> Unit,
     totalSeconds: Int = 6,
 ) {
@@ -147,7 +159,7 @@ private fun FrictionCountdownScreen(
             onSelectionChange = { index, value ->
                 reactanceSelections = reactanceSelections.toMutableList().apply { set(index, value) }
             },
-            onSubmit = { onReactanceSubmittedGoHome(it) }
+            onSubmit = { onReactanceSubmittedCloseApp(it) }
         )
         return
     }
@@ -167,7 +179,7 @@ private fun FrictionCountdownScreen(
             },
             onSubmit = { responses ->
                 if (pendingGoHome) {
-                    onReactanceSubmittedGoHome(responses)
+                    onReactanceSubmittedCloseApp(responses)
                 } else {
                     onReactanceSubmittedLaunchTarget(responses, pendingLaunchPackage ?: targetPackage)
                 }
@@ -256,41 +268,4 @@ private fun FrictionCountdownScreen(
             dismissOnClickOutside = false
         )
     }
-}
-
-private fun FrictionActivity.navigateHomeAndClose() {
-    sessionManager.markClosedViaIntervention()
-    val intent = Intent(Intent.ACTION_MAIN).apply {
-        addCategory(Intent.CATEGORY_HOME)
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-    }
-    startActivity(intent)
-    // Remove our app from the task so the user sees the home screen, not our app.
-    finishAndRemoveTask()
-}
-
-private fun FrictionActivity.launchTargetAppAndFinish(targetPackage: String) {
-    sessionManager.markDesignFrictionDismissed()
-    // Never launch ourselves; target must be the app the user originally intended to open (e.g. Instagram).
-    val packageToLaunch = targetPackage.takeIf { it.isNotEmpty() && it != packageName }
-    if (packageToLaunch != null) {
-        sessionManager.notifyReturningUserToTargetApp(packageToLaunch)
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageToLaunch)
-        if (launchIntent != null) {
-            launchIntent.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP
-            )
-            try {
-                startActivity(launchIntent)
-            } catch (e: Exception) {
-                Log.e("FrictionActivity", "Failed to launch target app: $packageToLaunch", e)
-            }
-        } else {
-            Log.w("FrictionActivity", "No launch intent for package: $packageToLaunch (check <queries> on Android 11+)")
-        }
-    }
-    // Remove our app from the task so the user sees the target app (e.g. Instagram), not our app.
-    finishAndRemoveTask()
 }

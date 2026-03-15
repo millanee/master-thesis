@@ -11,8 +11,12 @@ import androidx.activity.addCallback
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -21,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.lifecycleScope
 import com.millane.thesis.application.data.dailygoals.DailyGoalsRepository
-import com.millane.thesis.application.data.reactance.PendingReactanceStore
 import com.millane.thesis.application.study.SessionManager
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
 import com.millane.thesis.application.ui.components.ReactanceScaleDialog
@@ -29,7 +32,6 @@ import com.millane.thesis.application.ui.theme.InterventionContextAppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 /**
@@ -68,28 +70,26 @@ class GoalAdvancementActivity : ComponentActivity() {
         val targetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE).orEmpty()
         val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
         val sessionOpenedAtMs = intent.getLongExtra(EXTRA_SESSION_OPENED_AT_MS, System.currentTimeMillis())
-        val pendingReactanceStore = PendingReactanceStore(applicationContext)
+        sessionManager.markInterventionUiVisible()
         sessionManager.markGoalAdvancementShown()
-
-        val goalsRepo = DailyGoalsRepository(applicationContext)
-        val goals = runBlocking {
-            goalsRepo.goals.first()
-                .map { it.text.trim() }
-                .filter { it.isNotEmpty() }
-        }
 
         setContent {
             InterventionContextAppTheme {
                 GoalAdvancementScreen(
                     targetPackage = targetPackage,
-                    goals = goals,
+                    goalsRepo = DailyGoalsRepository(applicationContext),
                     sessionOpenedAtMs = sessionOpenedAtMs,
                     showReactanceFromHome = showReactanceFromHomeState.value,
                     onChoiceMade = { if (!userChoiceMade) userChoiceMade = true },
-                    onReactanceSubmittedGoHome = { responses ->
+                    onReactanceSubmittedCloseApp = { responses ->
                         lifecycleScope.launch(Dispatchers.IO) {
-                            sessionId?.let { pendingReactanceStore.store(it, responses) }
-                            withContext(Dispatchers.Main) { navigateHomeAndClose() }
+                            sessionManager.saveReactanceResponsesForSessionSync(sessionId, responses)
+                            sessionManager.markClosedViaIntervention()
+                            withContext(Dispatchers.Main) {
+                                sessionManager.markInterventionUiHidden()
+                                sessionManager.launchContextValidationForSession(sessionId)
+                                finishAndRemoveTask()
+                            }
                         }
                     },
                     onReactanceSubmittedContinue = { responses ->
@@ -97,7 +97,10 @@ class GoalAdvancementActivity : ComponentActivity() {
                             sessionManager.saveReactanceResponsesForSessionSync(sessionId, responses)
                             sessionManager.markGoalAdvancementDismissed()
                             sessionManager.scheduleNextGoalAdvancementTrigger()
-                            withContext(Dispatchers.Main) { launchTargetAppAndFinish(targetPackage) }
+                            withContext(Dispatchers.Main) {
+                                sessionManager.markInterventionUiHidden()
+                                launchTargetAppAndFinish(targetPackage)
+                            }
                         }
                     }
                 )
@@ -115,16 +118,23 @@ class GoalAdvancementActivity : ComponentActivity() {
 @Composable
 private fun GoalAdvancementScreen(
     targetPackage: String,
-    goals: List<String>,
+    goalsRepo: DailyGoalsRepository,
     sessionOpenedAtMs: Long,
     showReactanceFromHome: Boolean,
     onChoiceMade: () -> Unit,
-    onReactanceSubmittedGoHome: (List<Int>) -> Unit,
+    onReactanceSubmittedCloseApp: (List<Int>) -> Unit,
     onReactanceSubmittedContinue: (List<Int>) -> Unit
 ) {
     var showReactanceDialog by rememberSaveable { mutableStateOf(false) }
     var pendingGoHome by rememberSaveable { mutableStateOf(false) }
     var reactanceSelections by rememberSaveable { mutableStateOf(listOf<Int?>(null, null, null, null, null)) }
+    var goals by remember { mutableStateOf<List<String>?>(null) }
+
+    LaunchedEffect(goalsRepo) {
+        goals = goalsRepo.goals.first()
+            .map { it.text.trim() }
+            .filter { it.isNotEmpty() }
+    }
 
     if (showReactanceFromHome) {
         Box(
@@ -136,7 +146,7 @@ private fun GoalAdvancementScreen(
             onSelectionChange = { index, value ->
                 reactanceSelections = reactanceSelections.toMutableList().apply { set(index, value) }
             },
-            onSubmit = { onReactanceSubmittedGoHome(it) }
+            onSubmit = { onReactanceSubmittedCloseApp(it) }
         )
         return
     }
@@ -153,7 +163,7 @@ private fun GoalAdvancementScreen(
             },
             onSubmit = { responses ->
                 if (pendingGoHome) {
-                    onReactanceSubmittedGoHome(responses)
+                    onReactanceSubmittedCloseApp(responses)
                 } else {
                     onReactanceSubmittedContinue(responses)
                 }
@@ -168,6 +178,18 @@ private fun GoalAdvancementScreen(
         showReactanceDialog = true
     }
 
+    if (goals == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = Color.White)
+        }
+        return
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -175,8 +197,8 @@ private fun GoalAdvancementScreen(
         contentAlignment = Alignment.Center
     ) {
         val bullets =
-            if (goals.isEmpty()) emptyList()
-            else listOf("Your goals for today:") + goals
+            if (goals.orEmpty().isEmpty()) emptyList()
+            else listOf("Your goals for today:") + goals.orEmpty()
 
         val sessionDurationMinutes =
             ((System.currentTimeMillis() - sessionOpenedAtMs) / 60_000L).coerceAtLeast(0L).toInt()
@@ -200,16 +222,6 @@ private fun GoalAdvancementScreen(
             dismissOnClickOutside = false
         )
     }
-}
-
-private fun GoalAdvancementActivity.navigateHomeAndClose() {
-    sessionManager.markClosedViaIntervention()
-    val intent = Intent(Intent.ACTION_MAIN).apply {
-        addCategory(Intent.CATEGORY_HOME)
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-    }
-    startActivity(intent)
-    finishAndRemoveTask()
 }
 
 private fun GoalAdvancementActivity.launchTargetAppAndFinish(targetPackage: String) {
