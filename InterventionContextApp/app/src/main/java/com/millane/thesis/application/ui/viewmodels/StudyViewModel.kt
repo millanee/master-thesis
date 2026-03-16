@@ -23,6 +23,7 @@ enum class StudyStatus {
 
 data class StudySnapshot(
     val participantId: String? = null,
+    val nickname: String? = null,
     val group: StudyGroup? = null,
     val startDateMs: Long? = null,
     val weekIndex: Int? = null,
@@ -42,9 +43,9 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val snapshot: StateFlow<StudySnapshot> =
-        combine(repo.participantId, repo.group, repo.startDateMs, clock) { pid, group, start, now ->
+        combine(repo.participantId, repo.nickname, repo.group, repo.startDateMs, clock) { pid, nickname, group, start, now ->
             if (pid == null || group == null || start == null) {
-                StudySnapshot(participantId = pid, group = group, startDateMs = start)
+                StudySnapshot(participantId = pid, nickname = nickname, group = group, startDateMs = start)
             } else {
                 val status = when {
                     now < start -> StudyStatus.NOT_STARTED
@@ -55,6 +56,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                 if (status != StudyStatus.IN_PROGRESS) {
                     return@combine StudySnapshot(
                         participantId = pid,
+                        nickname = nickname,
                         group = group,
                         startDateMs = start,
                         status = status
@@ -65,6 +67,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                 val active = StudyManager.interventionFor(group, w)
                 StudySnapshot(
                     participantId = pid,
+                    nickname = nickname,
                     group = group,
                     startDateMs = start,
                     weekIndex = w,
@@ -86,5 +89,9 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setStartDateNow() {
         viewModelScope.launch { repo.setStartDateToNextStudyDay(System.currentTimeMillis()) }
+    }
+
+    fun saveNickname(nickname: String) {
+        viewModelScope.launch { repo.saveNickname(nickname) }
     }
 }

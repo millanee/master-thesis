@@ -25,6 +25,7 @@ class StudyRepository(private val context: Context) {
 
     private object Keys {
         val PARTICIPANT_ID = stringPreferencesKey("study_participant_id")
+        val NICKNAME = stringPreferencesKey("study_nickname")
         val GROUP = stringPreferencesKey("study_group")
         val START_DATE_MS = longPreferencesKey("study_start_date_ms")
     }
@@ -37,6 +38,9 @@ class StudyRepository(private val context: Context) {
 
     val participantId: Flow<String?> =
         context.appDataStore.data.map { prefs -> prefs[Keys.PARTICIPANT_ID] }
+
+    val nickname: Flow<String?> =
+        context.appDataStore.data.map { prefs -> prefs[Keys.NICKNAME] }
 
     val group: Flow<StudyGroup?> =
         context.appDataStore.data.map { prefs ->
@@ -146,6 +150,28 @@ class StudyRepository(private val context: Context) {
         context.appDataStore.edit { prefs ->
             prefs[Keys.GROUP] = group.name
         }
+    }
+
+    suspend fun saveNickname(nickname: String) {
+        val trimmed = nickname.trim()
+        require(trimmed.isNotEmpty()) { "Nickname must not be blank." }
+
+        val participantId = getOrCreateParticipantId()
+
+        context.appDataStore.edit { prefs ->
+            prefs[Keys.NICKNAME] = trimmed
+        }
+
+        firestore.collection("participants")
+            .document(participantId)
+            .set(
+                mapOf(
+                    "participantId" to participantId,
+                    "nickname" to trimmed,
+                    "createdAtMs" to System.currentTimeMillis()
+                ),
+                SetOptions.merge()
+            )
     }
 
     suspend fun setStartDateMs(value: Long) {
