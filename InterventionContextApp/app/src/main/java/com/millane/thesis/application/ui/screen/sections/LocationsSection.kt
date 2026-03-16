@@ -1,16 +1,13 @@
 package com.millane.thesis.application.ui.screen.sections
 
 import android.Manifest
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,7 +22,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.millane.thesis.application.data.datastore.DevDataStoreReset
 import com.millane.thesis.application.domain.location.LocationContextType
 import com.millane.thesis.application.domain.location.LocationEntry
 import com.millane.thesis.application.location.geofence.GeofenceManager
@@ -122,30 +118,6 @@ fun LocationsSection(
                 homeInput = ""
             }
         }
-    }
-
-    val isDebuggable =
-        (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-
-    if (isDebuggable) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            OutlinedButton(
-                onClick = {
-                    scope.launch {
-                        DevDataStoreReset.clearAll(context)
-                        vm.resetForTesting()
-                        geofenceManager.clearAll()
-                        helperText = "DEV: cleared all stored data."
-                    }
-                }
-            ) {
-                Text("DEV: Reset all data")
-            }
-        }
-        Spacer(Modifier.height(12.dp))
     }
 
     val canSubmit = workLocations.isNotEmpty() && homeLocations.isNotEmpty()

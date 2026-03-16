@@ -20,19 +20,14 @@ class DailyGoalsRepository(
         val LAST_DAILY_GOALS_PROMPT_DAY_MS = longPreferencesKey("last_daily_goals_prompt_day_ms")
     }
 
-    private val defaultGoal = DailyGoal(
-        id = "default",
-        text = "Create Figma Design"
-    )
-
     val goals: Flow<List<DailyGoal>> =
         context.appDataStore.data.map { prefs ->
             val raw = prefs[Keys.DAILY_GOALS_JSON]
             if (raw.isNullOrBlank()) {
-                listOf(defaultGoal)
+                emptyList()
             } else {
                 runCatching { JsonCodec.decode<List<DailyGoal>>(raw) }
-                    .getOrElse { listOf(defaultGoal) }
+                    .getOrElse { emptyList() }
             }
         }
 
@@ -56,11 +51,8 @@ class DailyGoalsRepository(
 
         val updated = current.filterNot { it.id == id }
 
-        // keep at least 1 (safety)
-        val safe = if (updated.isEmpty()) listOf(defaultGoal) else updated
-
         context.appDataStore.edit { prefs ->
-            prefs[Keys.DAILY_GOALS_JSON] = JsonCodec.encode(safe)
+            prefs[Keys.DAILY_GOALS_JSON] = JsonCodec.encode(updated)
         }
     }
 
@@ -86,7 +78,7 @@ class DailyGoalsRepository(
     private suspend fun getGoalsOnce(): List<DailyGoal> {
         val prefs = context.appDataStore.data.first()
         val raw = prefs[Keys.DAILY_GOALS_JSON]
-        if (raw.isNullOrBlank()) return listOf(defaultGoal)
-        return runCatching { JsonCodec.decode<List<DailyGoal>>(raw) }.getOrElse { listOf(defaultGoal) }
+        if (raw.isNullOrBlank()) return emptyList()
+        return runCatching { JsonCodec.decode<List<DailyGoal>>(raw) }.getOrElse { emptyList() }
     }
 }
