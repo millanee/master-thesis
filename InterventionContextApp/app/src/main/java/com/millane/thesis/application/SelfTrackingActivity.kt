@@ -41,6 +41,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.lifecycleScope
 import com.millane.thesis.application.data.usage.SelfTrackingUsageRepository
 import com.millane.thesis.application.data.usage.SelfTrackingUsageSnapshot
+import com.millane.thesis.application.domain.location.LocationContextType
 import com.millane.thesis.application.study.SessionManager
 import com.millane.thesis.application.ui.components.ReactanceScaleDialog
 import com.millane.thesis.application.ui.theme.InterventionContextAppTheme
@@ -84,7 +85,8 @@ class SelfTrackingActivity : ComponentActivity() {
         val targetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE).orEmpty()
         val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
         val openedAtMs = intent.getLongExtra(EXTRA_SESSION_OPENED_AT_MS, System.currentTimeMillis())
-        val isHome = intent.getBooleanExtra(EXTRA_SESSION_IS_HOME, false)
+        val contextType = intent.getStringExtra(EXTRA_SESSION_CONTEXT_TYPE)
+            ?.let { runCatching { LocationContextType.valueOf(it) }.getOrNull() }
 
         sessionManager.markInterventionUiVisible()
         sessionManager.markSelfTrackingShown()
@@ -94,7 +96,7 @@ class SelfTrackingActivity : ComponentActivity() {
                 SelfTrackingScreen(
                     targetPackage = targetPackage,
                     sessionOpenedAtMs = openedAtMs,
-                    sessionIsHome = isHome,
+                    sessionContextType = contextType,
                     usageRepo = usageRepo,
                     showReactanceFromHome = showReactanceFromHomeState.value,
                     onChoiceMade = { if (!userChoiceMade) userChoiceMade = true },
@@ -132,8 +134,8 @@ class SelfTrackingActivity : ComponentActivity() {
             "com.millane.thesis.application.extra.SELF_TRACKING_SESSION_ID"
         const val EXTRA_SESSION_OPENED_AT_MS =
             "com.millane.thesis.application.extra.SELF_TRACKING_OPENED_AT_MS"
-        const val EXTRA_SESSION_IS_HOME =
-            "com.millane.thesis.application.extra.SELF_TRACKING_IS_HOME"
+        const val EXTRA_SESSION_CONTEXT_TYPE =
+            "com.millane.thesis.application.extra.SELF_TRACKING_CONTEXT_TYPE"
     }
 }
 
@@ -141,7 +143,7 @@ class SelfTrackingActivity : ComponentActivity() {
 private fun SelfTrackingScreen(
     targetPackage: String,
     sessionOpenedAtMs: Long,
-    sessionIsHome: Boolean,
+    sessionContextType: LocationContextType?,
     usageRepo: SelfTrackingUsageRepository,
     showReactanceFromHome: Boolean,
     onChoiceMade: () -> Unit,
@@ -160,9 +162,9 @@ private fun SelfTrackingScreen(
         val snapshot = usageRepo.getSnapshotIncludingOngoing(
             nowMs = now,
             ongoingStartMs = sessionOpenedAtMs,
-            ongoingIsHome = sessionIsHome
+            ongoingContextType = sessionContextType
         )
-        uiState = UsageUiState.from(snapshot, now, sessionOpenedAtMs)
+        uiState = UsageUiState.from(snapshot, now, sessionOpenedAtMs, sessionContextType)
     }
 
     if (showReactanceFromHome) {
@@ -239,8 +241,9 @@ private fun SelfTrackingScreen(
 
 private data class UsageUiState(
     val sessionDurationMinutes: Int,
-    val lastHomeTime: String?,
-    val homeDurationMinutes: Int,
+    val contextLabel: String,
+    val lastContextTime: String?,
+    val contextDurationMinutes: Int,
     val hourFractions: List<Float>,
     val currentHourIndex: Int
 ) {
@@ -248,15 +251,16 @@ private data class UsageUiState(
         fun from(
             snapshot: SelfTrackingUsageSnapshot,
             nowMs: Long,
-            sessionOpenedAtMs: Long
+            sessionOpenedAtMs: Long,
+            contextType: LocationContextType?
         ): UsageUiState {
             val sessionDurationMin =
                 ((nowMs - sessionOpenedAtMs) / 60000L).coerceAtLeast(0L).toInt()
-            val homeMin = (snapshot.totalHomeMsToday / 60000L).toInt()
+            val contextMin = (snapshot.totalContextMsToday / 60000L).toInt()
 
             val dateFmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-            val lastHome =
-                snapshot.lastHomeUsedAtMs?.let { dateFmt.format(Date(it)) }
+            val lastContext =
+                snapshot.lastContextUsedAtMs?.let { dateFmt.format(Date(it)) }
 
             val hourFractions = snapshot.perHourMs.map { ms ->
                 val minutes = ms / 60000f
@@ -268,11 +272,19 @@ private data class UsageUiState(
 
             return UsageUiState(
                 sessionDurationMinutes = sessionDurationMin,
-                lastHomeTime = lastHome,
-                homeDurationMinutes = homeMin,
+                contextLabel = contextLabel(contextType),
+                lastContextTime = lastContext,
+                contextDurationMinutes = contextMin,
                 hourFractions = hourFractions,
                 currentHourIndex = hourIndex
             )
+        }
+
+        private fun contextLabel(contextType: LocationContextType?): String = when (contextType) {
+            LocationContextType.HOME -> "home"
+            LocationContextType.WORK -> "work"
+            LocationContextType.BEDTIME -> "bedtime"
+            null -> "this context"
         }
     }
 }
@@ -314,12 +326,12 @@ private fun UsageStatisticsDialog(
                     color = PrimaryText
                 )
                 Text(
-                    text = "SM last used in home: ${state.lastHomeTime ?: "-"}",
+                    text = "SM last used in ${state.contextLabel}: ${state.lastContextTime ?: "-"}",
                     fontSize = 16.sp,
                     color = PrimaryText
                 )
                 Text(
-                    text = "Session duration during home: ${state.homeDurationMinutes} min",
+                    text = "Session duration during ${state.contextLabel}: ${state.contextDurationMinutes} min",
                     fontSize = 16.sp,
                     color = PrimaryText
                 )

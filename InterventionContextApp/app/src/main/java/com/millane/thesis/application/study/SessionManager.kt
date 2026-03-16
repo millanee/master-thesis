@@ -223,13 +223,6 @@ class SessionManager(
                     return@withLock
                 }
 
-                if (activeSessionId != null && activeApp == packageName) {
-                    cancelPendingEndSession()
-                    pendingReturnToTargetAppPackage = null
-                    Log.d("SESSION", "session already active for app = $packageName")
-                    return@withLock
-                }
-
                 val bedtimeStart = bedtimeRepo.bedtime.first()
                 val goals = goalsRepo.goals.first()
                 val submittedLocations = locationsRepo.locations.first()
@@ -297,6 +290,14 @@ class SessionManager(
                 // Self-tracking: touching stats here ensures they are reset on first open after 4 AM.
                 if (snapshot.activeInterventionType == InterventionType.SELF_TRACKING) {
                     usageRepo.touchToday()
+                }
+
+                if (activeSessionId != null && activeApp == packageName) {
+                    cancelPendingEndSession()
+                    pendingReturnToTargetAppPackage = null
+                    ensureInterventionStateForActiveSession(snapshot.activeInterventionType)
+                    Log.d("SESSION", "session already active for app = $packageName")
+                    return@withLock
                 }
 
                 startSessionLocked(
@@ -566,12 +567,10 @@ class SessionManager(
 
             if (activeIntervention == InterventionType.SELF_TRACKING) {
                 val openedAt = activeSessionOpenedAtMs ?: closedAtMs
-                val isHome = activeLocationAtStart == LocationContextType.HOME ||
-                    activeLocationAtStart == LocationContextType.BEDTIME
                 usageRepo.recordFinishedSession(
                     startMs = openedAt,
                     endMs = closedAtMs,
-                    isHome = isHome
+                    contextType = activeLocationAtStart
                 )
             }
 
@@ -668,6 +667,28 @@ class SessionManager(
         mainHandler.post { scheduleGoalAdvancementTrigger() }
     }
 
+    private fun ensureInterventionStateForActiveSession(interventionType: InterventionType) {
+        activeIntervention = interventionType
+        when (interventionType) {
+            InterventionType.GOAL_ADVANCEMENT -> {
+                cancelSelfTrackingTrigger()
+                if (goalAdvancementRunnable == null) {
+                    scheduleGoalAdvancementTrigger()
+                }
+            }
+            InterventionType.SELF_TRACKING -> {
+                cancelGoalAdvancementTrigger()
+                if (selfTrackingRunnable == null) {
+                    scheduleSelfTrackingTrigger()
+                }
+            }
+            InterventionType.DESIGN_FRICTION -> {
+                cancelGoalAdvancementTrigger()
+                cancelSelfTrackingTrigger()
+            }
+        }
+    }
+
     /** Schedules the 15-min timer; when it fires, launches GoalAdvancementActivity. */
     fun scheduleGoalAdvancementTrigger() {
         cancelGoalAdvancementTrigger()
@@ -735,8 +756,7 @@ class SessionManager(
     private fun maybeLaunchSelfTracking() {
         val targetPackage = activeApp ?: return
         val openedAt = activeSessionOpenedAtMs ?: System.currentTimeMillis()
-        val isHome = activeLocationAtStart == LocationContextType.HOME ||
-            activeLocationAtStart == LocationContextType.BEDTIME
+        val contextType = activeLocationAtStart
         val sessionId = activeSessionId ?: return
         beginInterventionLaunch()
         val intent = Intent(context, SelfTrackingActivity::class.java).apply {
@@ -747,7 +767,7 @@ class SessionManager(
             )
             putExtra(SelfTrackingActivity.EXTRA_TARGET_PACKAGE, targetPackage)
             putExtra(SelfTrackingActivity.EXTRA_SESSION_OPENED_AT_MS, openedAt)
-            putExtra(SelfTrackingActivity.EXTRA_SESSION_IS_HOME, isHome)
+            putExtra(SelfTrackingActivity.EXTRA_SESSION_CONTEXT_TYPE, contextType?.name)
             putExtra(SelfTrackingActivity.EXTRA_SESSION_ID, sessionId)
         }
         context.startActivity(intent)
