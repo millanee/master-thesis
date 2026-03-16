@@ -88,6 +88,9 @@ class SessionManager(
     @Volatile
     private var lastForegroundPackage: String? = null
 
+    @Volatile
+    private var previousForegroundPackage: String? = null
+
     // Some devices / launchers take several seconds between our Activity finishing and the
     // target app becoming foreground (especially with task/animation delays). If this window
     // is too small, we may incorrectly treat the transition as the user "leaving" the app and
@@ -102,15 +105,6 @@ class SessionManager(
             pendingReturnToTargetTimestampMs = System.currentTimeMillis()
             Log.d("SESSION", "notifyReturningUserToTargetApp: $targetPackage")
         }
-    }
-
-    /** True if we should skip ending the session because we are in the middle of returning the user to the target app. */
-    private fun shouldSkipEndBecauseReturningToTarget(): Boolean {
-        val pending = pendingReturnToTargetAppPackage ?: return false
-        val active = activeApp ?: return false
-        if (pending != active) return false
-        val elapsed = System.currentTimeMillis() - pendingReturnToTargetTimestampMs
-        return elapsed in 0..pendingReturnToTargetWindowMs
     }
 
     /** Set right before launching an intervention activity. Some devices briefly report launcher
@@ -174,6 +168,7 @@ class SessionManager(
     fun onForegroundAppChanged(packageName: String) {
         CoroutineScope(Dispatchers.IO).launch {
             sessionMutex.withLock {
+                previousForegroundPackage = lastForegroundPackage
                 lastForegroundPackage = packageName
                 Log.d("SESSION", "Foreground app changed: $packageName")
 
@@ -222,6 +217,9 @@ class SessionManager(
                     scheduleEndSessionDebounced()
                     return@withLock
                 }
+
+                // Once a selected target app is foreground again, any intervention UI is no longer visible.
+                interventionUiVisible = false
 
                 val bedtimeStart = bedtimeRepo.bedtime.first()
                 val goals = goalsRepo.goals.first()
@@ -611,6 +609,19 @@ class SessionManager(
         if (foreground == currentActiveApp) return true
 
         return false
+    }
+
+    private fun shouldSkipEndBecauseReturningToTarget(): Boolean {
+        val pending = pendingReturnToTargetAppPackage ?: return false
+        val active = activeApp ?: return false
+        if (pending != active) return false
+
+        val previous = previousForegroundPackage
+        val cameDirectlyFromOurApp = previous == context.packageName
+        if (!cameDirectlyFromOurApp) return false
+
+        val elapsed = System.currentTimeMillis() - pendingReturnToTargetTimestampMs
+        return elapsed in 0..pendingReturnToTargetWindowMs
     }
 
     private suspend fun maybeLaunchDailyGoalsPromptForNewDay(targetPackage: String): Boolean {
