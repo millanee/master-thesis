@@ -3,7 +3,9 @@ package com.millane.thesis.application.ui.viewmodels
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.millane.thesis.application.notifications.StudyCompletionNotifier
 import com.millane.thesis.application.data.study.StudyRepository
+import com.millane.thesis.application.data.study.SusQuestionnaireSubmission
 import com.millane.thesis.application.study.InterventionType
 import com.millane.thesis.application.study.StudyGroup
 import com.millane.thesis.application.study.StudyManager
@@ -28,12 +30,35 @@ data class StudySnapshot(
     val startDateMs: Long? = null,
     val weekIndex: Int? = null,
     val activeIntervention: InterventionType? = null,
-    val status: StudyStatus = StudyStatus.NOT_STARTED
+    val status: StudyStatus = StudyStatus.NOT_STARTED,
+    val questionnaireSubmitted: Boolean = false
+)
+
+data class SusQuestion(
+    val id: String,
+    val prompt: String
 )
 
 class StudyViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = StudyRepository(app.applicationContext)
+    private val notifier = StudyCompletionNotifier(app.applicationContext)
+
+    val susQuestions: List<SusQuestion> = listOf(
+        SusQuestion("q1", "I think this app supported me in using social media more intentionally."),
+        SusQuestion("q2", "I found the intervention flow unnecessarily complicated."),
+        SusQuestion("q3", "I felt confident using this app during the study.")
+    )
+
+    private data class ParticipantState(
+        val participantId: String?,
+        val nickname: String?
+    )
+
+    private data class StudyState(
+        val group: StudyGroup?,
+        val startDateMs: Long?
+    )
 
     private val clock = flow {
         while (true) {
@@ -43,9 +68,28 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val snapshot: StateFlow<StudySnapshot> =
-        combine(repo.participantId, repo.nickname, repo.group, repo.startDateMs, clock) { pid, nickname, group, start, now ->
+        combine(
+            combine(repo.participantId, repo.nickname) { pid, nickname ->
+                ParticipantState(participantId = pid, nickname = nickname)
+            },
+            combine(repo.group, repo.startDateMs) { group, start ->
+                StudyState(group = group, startDateMs = start)
+            },
+            repo.questionnaireSubmitted,
+            clock
+        ) { participantState, studyState, questionnaireSubmitted, now ->
+            val pid = participantState.participantId
+            val nickname = participantState.nickname
+            val group = studyState.group
+            val start = studyState.startDateMs
             if (pid == null || group == null || start == null) {
-                StudySnapshot(participantId = pid, nickname = nickname, group = group, startDateMs = start)
+                StudySnapshot(
+                    participantId = pid,
+                    nickname = nickname,
+                    group = group,
+                    startDateMs = start,
+                    questionnaireSubmitted = questionnaireSubmitted
+                )
             } else {
                 val status = when {
                     now < start -> StudyStatus.NOT_STARTED
@@ -59,7 +103,8 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                         nickname = nickname,
                         group = group,
                         startDateMs = start,
-                        status = status
+                        status = status,
+                        questionnaireSubmitted = questionnaireSubmitted
                     )
                 }
 
@@ -72,7 +117,8 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     startDateMs = start,
                     weekIndex = w,
                     activeIntervention = active,
-                    status = status
+                    status = status,
+                    questionnaireSubmitted = questionnaireSubmitted
                 )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StudySnapshot())
@@ -93,5 +139,19 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveNickname(nickname: String) {
         viewModelScope.launch { repo.saveNickname(nickname) }
+    }
+
+    suspend fun maybeShowStudyCompletionNotification() {
+        val shouldShow = repo.markCompletionNotificationShownIfNeeded()
+        if (shouldShow) {
+            notifier.show()
+        }
+    }
+
+    suspend fun submitSusQuestionnaire(answers: List<Int>): SusQuestionnaireSubmission {
+        return repo.submitSusQuestionnaire(
+            answers = answers,
+            questions = susQuestions.map { it.prompt }
+        )
     }
 }

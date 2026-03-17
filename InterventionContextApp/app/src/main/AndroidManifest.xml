@@ -14,6 +14,8 @@
     <!-- Optional: If you later use foreground service for tracking -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Required on Android 11+ so getLaunchIntentForPackage() works when user taps "Proceed" in design friction -->
     <queries>
         <intent>

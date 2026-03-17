@@ -1,22 +1,41 @@
 package com.millane.thesis.application
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -27,14 +46,25 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.millane.thesis.application.ui.screen.MainScreen
 import com.millane.thesis.application.ui.components.ConfirmationAndInterventionDialog
+import com.millane.thesis.application.ui.screen.components.RoundedCard
 import com.millane.thesis.application.ui.theme.InterventionContextAppTheme
+import com.millane.thesis.application.ui.theme.CardBackground
+import com.millane.thesis.application.ui.theme.InnerCardBackground
 import com.millane.thesis.application.ui.theme.PageBackground
+import com.millane.thesis.application.ui.theme.PrimaryText
+import com.millane.thesis.application.ui.theme.SecondaryText
+import com.millane.thesis.application.ui.theme.SubmitButtonBackground
+import com.millane.thesis.application.ui.viewmodels.StudyStatus
 import com.millane.thesis.application.ui.viewmodels.StudyViewModel
+import com.millane.thesis.application.ui.viewmodels.SusQuestion
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,9 +82,30 @@ class MainActivity : ComponentActivity() {
 private fun AppEntryScreen() {
     val studyVm: StudyViewModel = viewModel()
     val study by studyVm.snapshot.collectAsState()
+    val context = LocalContext.current
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { }
 
     LaunchedEffect(Unit) {
         studyVm.initIfMissing()
+    }
+
+    LaunchedEffect(study.status, study.questionnaireSubmitted) {
+        if (study.status == StudyStatus.COMPLETED && !study.questionnaireSubmitted) {
+            studyVm.maybeShowStudyCompletionNotification()
+        }
+    }
+
+    LaunchedEffect(study.status, study.questionnaireSubmitted) {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            study.status == StudyStatus.COMPLETED &&
+            !study.questionnaireSubmitted &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     when {
@@ -75,7 +126,208 @@ private fun AppEntryScreen() {
             )
         }
 
+        study.status == StudyStatus.COMPLETED && !study.questionnaireSubmitted -> {
+            StudyQuestionnaireScreen(
+                questions = studyVm.susQuestions,
+                onSubmit = { answers -> studyVm.submitSusQuestionnaire(answers) }
+            )
+        }
+
+        study.status == StudyStatus.COMPLETED && study.questionnaireSubmitted -> {
+            QuestionnaireSubmittedScreen()
+        }
+
         else -> MainScreen()
+    }
+}
+
+@Composable
+private fun StudyQuestionnaireScreen(
+    questions: List<SusQuestion>,
+    onSubmit: suspend (List<Int>) -> Unit
+) {
+    var currentQuestionIndex by rememberSaveable { mutableStateOf(0) }
+    var answers by rememberSaveable { mutableStateOf(List(questions.size) { 0 }) }
+    var isSubmitting by rememberSaveable { mutableStateOf(false) }
+
+    val currentAnswer = answers[currentQuestionIndex]
+    val currentQuestion = questions[currentQuestionIndex]
+    val isLastQuestion = currentQuestionIndex == questions.lastIndex
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(PageBackground)
+            .padding(20.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        RoundedCard(
+            background = CardBackground,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "Study questionnaire",
+                style = MaterialTheme.typography.headlineSmall,
+                color = PrimaryText
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Question ${currentQuestionIndex + 1} of ${questions.size}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = SecondaryText
+            )
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = currentQuestion.prompt,
+                style = MaterialTheme.typography.titleMedium,
+                color = PrimaryText
+            )
+            Spacer(Modifier.height(20.dp))
+
+            LikertScaleSelector(
+                selectedValue = currentAnswer,
+                onValueSelected = { selected ->
+                    answers = answers.toMutableList().also { it[currentQuestionIndex] = selected }
+                }
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            if (isLastQuestion) {
+                androidx.compose.material3.Button(
+                    onClick = {
+                        if (currentAnswer == 0 || isSubmitting) return@Button
+                        isSubmitting = true
+                    },
+                    enabled = currentAnswer != 0 && !isSubmitting,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = SubmitButtonBackground,
+                        contentColor = PrimaryText
+                    )
+                ) {
+                    Text(if (isSubmitting) "Submitting..." else "Submit")
+                }
+            } else {
+                TextButton(
+                    onClick = {
+                        if (currentAnswer != 0) currentQuestionIndex += 1
+                    },
+                    enabled = currentAnswer != 0,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Next")
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Next question"
+                    )
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(isSubmitting) {
+        if (isSubmitting) {
+            onSubmit(answers)
+        }
+    }
+}
+
+@Composable
+private fun LikertScaleSelector(
+    selectedValue: Int,
+    onValueSelected: (Int) -> Unit
+) {
+    val labels = listOf(
+        1 to "Strongly disagree",
+        2 to "Disagree",
+        3 to "Neither agree nor disagree",
+        4 to "Agree",
+        5 to "Strongly agree"
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        labels.forEach { (value, label) ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = if (selectedValue == value) MaterialTheme.colorScheme.primary else SecondaryText,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .clickable { onValueSelected(value) },
+                shape = RoundedCornerShape(16.dp),
+                color = InnerCardBackground
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = selectedValue == value,
+                            onClick = { onValueSelected(value) }
+                        )
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = selectedValue == value,
+                        onClick = null
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = "$value = $label",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PrimaryText
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuestionnaireSubmittedScreen() {
+    val context = LocalContext.current
+    val raffleUrl = "https://example.com/raffle"
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(PageBackground)
+            .padding(20.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        RoundedCard(
+            background = CardBackground,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "Thank you",
+                style = MaterialTheme.typography.headlineSmall,
+                color = PrimaryText
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "You qualified for the raffle. If you want to participate in the raffle you must submit your email address via the link. Your email adress can not be attributed to your study results.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = PrimaryText
+            )
+            Spacer(Modifier.height(16.dp))
+            TextButton(
+                onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(raffleUrl))
+                    context.startActivity(intent)
+                }
+            ) {
+                Text(
+                    text = raffleUrl,
+                    color = MaterialTheme.colorScheme.primary,
+                    textDecoration = TextDecoration.Underline
+                )
+            }
+        }
     }
 }
 

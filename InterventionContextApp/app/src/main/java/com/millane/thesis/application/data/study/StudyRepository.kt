@@ -1,6 +1,7 @@
 package com.millane.thesis.application.data.study
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -28,6 +29,8 @@ class StudyRepository(private val context: Context) {
         val NICKNAME = stringPreferencesKey("study_nickname")
         val GROUP = stringPreferencesKey("study_group")
         val START_DATE_MS = longPreferencesKey("study_start_date_ms")
+        val QUESTIONNAIRE_SUBMITTED = booleanPreferencesKey("study_questionnaire_submitted")
+        val COMPLETION_NOTIFICATION_SHOWN = booleanPreferencesKey("study_completion_notification_shown")
     }
 
     private val assignment = FirestoreStudyAssignment(FirebaseFirestore.getInstance())
@@ -50,6 +53,12 @@ class StudyRepository(private val context: Context) {
 
     val startDateMs: Flow<Long?> =
         context.appDataStore.data.map { prefs -> prefs[Keys.START_DATE_MS] }
+
+    val questionnaireSubmitted: Flow<Boolean> =
+        context.appDataStore.data.map { prefs -> prefs[Keys.QUESTIONNAIRE_SUBMITTED] ?: false }
+
+    val completionNotificationShown: Flow<Boolean> =
+        context.appDataStore.data.map { prefs -> prefs[Keys.COMPLETION_NOTIFICATION_SHOWN] ?: false }
 
     /**
      * True when app selection is submitted, locations are submitted with at least one
@@ -219,6 +228,78 @@ class StudyRepository(private val context: Context) {
                 SetOptions.merge()
             )
     }
+
+    suspend fun markCompletionNotificationShownIfNeeded(): Boolean {
+        val shouldShow = !completionNotificationShown.first()
+        if (!shouldShow) return false
+
+        context.appDataStore.edit { prefs ->
+            prefs[Keys.COMPLETION_NOTIFICATION_SHOWN] = true
+        }
+        return true
+    }
+
+    suspend fun submitSusQuestionnaire(
+        answers: List<Int>,
+        questions: List<String>
+    ): SusQuestionnaireSubmission {
+        require(answers.isNotEmpty()) { "Answers must not be empty." }
+        require(answers.size == questions.size) { "Questions and answers must have the same size." }
+        require(answers.all { it in 1..5 }) { "All answers must be between 1 and 5." }
+
+        val participantId = getOrCreateParticipantId()
+        val susScore = calculateSusScore(answers)
+        val submittedAtMs = System.currentTimeMillis()
+        val responses = questions.mapIndexed { index, question ->
+            mapOf(
+                "questionId" to "q${index + 1}",
+                "questionText" to question,
+                "answer" to answers[index]
+            )
+        }
+
+        firestore.collection("susQuestionnaires")
+            .document(participantId)
+            .set(
+                mapOf(
+                    "participantId" to participantId,
+                    "answers" to answers,
+                    "responses" to responses,
+                    "susScore" to susScore,
+                    "submittedAtMs" to submittedAtMs
+                ),
+                SetOptions.merge()
+            )
+
+        firestore.collection("participants")
+            .document(participantId)
+            .set(
+                mapOf(
+                    "questionnaireSubmitted" to true,
+                    "susScore" to susScore,
+                    "questionnaireSubmittedAtMs" to submittedAtMs
+                ),
+                SetOptions.merge()
+            )
+
+        context.appDataStore.edit { prefs ->
+            prefs[Keys.QUESTIONNAIRE_SUBMITTED] = true
+        }
+
+        return SusQuestionnaireSubmission(
+            participantId = participantId,
+            answers = answers,
+            susScore = susScore,
+            submittedAtMs = submittedAtMs
+        )
+    }
+
+    private fun calculateSusScore(answers: List<Int>): Double {
+        val contributionSum = answers.mapIndexed { index, answer ->
+            if (index % 2 == 0) answer - 1 else 5 - answer
+        }.sum()
+        return contributionSum * (100.0 / (answers.size * 4.0))
+    }
 }
 
 data class CurrentStudySnapshot(
@@ -227,4 +308,11 @@ data class CurrentStudySnapshot(
     val startDateMs: Long,
     val studyWeek: Int,
     val activeInterventionType: InterventionType
+)
+
+data class SusQuestionnaireSubmission(
+    val participantId: String,
+    val answers: List<Int>,
+    val susScore: Double,
+    val submittedAtMs: Long
 )

@@ -22,6 +22,7 @@ import com.millane.thesis.application.data.study.StudyRepository
 import com.millane.thesis.application.data.usage.SelfTrackingUsageRepository
 import com.millane.thesis.application.domain.location.LocationContextType
 import com.millane.thesis.application.location.geofence.GeofenceContextStore
+import com.millane.thesis.application.notifications.StudyCompletionNotifier
 import com.millane.thesis.application.util.getCurrentStudyDayBoundary4AmMs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,7 @@ class SessionManager(
     private val appsRepo = AppSelectionRepository(context)
     private val sessionRepo = FirestoreSessionRepository(FirebaseFirestore.getInstance())
     private val usageRepo = SelfTrackingUsageRepository(context)
+    private val studyCompletionNotifier = StudyCompletionNotifier(context)
 
     private val sessionMutex = Mutex()
 
@@ -168,6 +170,7 @@ class SessionManager(
     fun onForegroundAppChanged(packageName: String) {
         CoroutineScope(Dispatchers.IO).launch {
             sessionMutex.withLock {
+                maybeNotifyStudyCompletion()
                 previousForegroundPackage = lastForegroundPackage
                 lastForegroundPackage = packageName
                 Log.d("SESSION", "Foreground app changed: $packageName")
@@ -305,6 +308,18 @@ class SessionManager(
                     activeInterventionType = snapshot.activeInterventionType
                 )
             }
+        }
+    }
+
+    private suspend fun maybeNotifyStudyCompletion() {
+        val start = studyRepo.startDateMs.first() ?: return
+        val questionnaireSubmitted = studyRepo.questionnaireSubmitted.first()
+        if (questionnaireSubmitted) return
+        if (!StudyManager.isStudyComplete(start, System.currentTimeMillis())) return
+
+        val shouldShow = studyRepo.markCompletionNotificationShownIfNeeded()
+        if (shouldShow) {
+            studyCompletionNotifier.show()
         }
     }
 
