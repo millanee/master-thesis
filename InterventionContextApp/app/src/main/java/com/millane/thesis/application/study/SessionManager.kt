@@ -273,7 +273,9 @@ class SessionManager(
                     val lastPrompted = goalsRepo.getLastDailyGoalsPromptDayMs()
                     val returningFromGoalPrompt = snapshot.activeInterventionType == InterventionType.GOAL_ADVANCEMENT &&
                         lastPrompted == boundaryMs
-                    if (!returningFromGoalPrompt) {
+                    val allowSelfTrackingWithoutContext =
+                        snapshot.activeInterventionType == InterventionType.SELF_TRACKING
+                    if (!returningFromGoalPrompt && !allowSelfTrackingWithoutContext) {
                         if (shouldSkipEndBecauseReturningToTarget()) {
                             Log.d("SESSION", "skipping end: returning user to target app (context NONE)")
                             return@withLock
@@ -285,7 +287,10 @@ class SessionManager(
                         scheduleEndSessionDebounced()
                         return@withLock
                     }
-                    Log.d("SESSION", "context NONE but returning from goal prompt; allowing session start")
+                    Log.d(
+                        "SESSION",
+                        "context NONE but allowing session start (goalPromptReturn=$returningFromGoalPrompt, selfTracking=$allowSelfTrackingWithoutContext)"
+                    )
                 }
 
                 // Self-tracking: touching stats here ensures they are reset on first open after 4 AM.
@@ -320,6 +325,42 @@ class SessionManager(
         val shouldShow = studyRepo.markCompletionNotificationShownIfNeeded()
         if (shouldShow) {
             studyCompletionNotifier.show()
+        }
+    }
+
+    suspend fun prepareGoalAdvancementSessionAfterDailyGoalsPrompt(targetPackage: String) {
+        if (targetPackage.isBlank()) return
+
+        sessionMutex.withLock {
+            val snapshot = studyRepo.getCurrentStudySnapshot() ?: return
+            if (snapshot.activeInterventionType != InterventionType.GOAL_ADVANCEMENT) return
+
+            if (activeSessionId != null && activeApp == targetPackage) {
+                cancelPendingEndSession()
+                ensureInterventionStateForActiveSession(snapshot.activeInterventionType)
+                Log.d("SESSION", "goal prompt return found existing session for $targetPackage")
+                return
+            }
+
+            val bedtimeStart = bedtimeRepo.bedtime.first()
+            val goals = goalsRepo.goals.first()
+            val submittedLocations = locationsRepo.locations.first()
+            val activeGeofences = GeofenceContextStore.activeGeofenceIds.value
+
+            val detectedContext = ContextDetector.detect(
+                bedtimeStart = bedtimeStart,
+                activeGeofenceIds = activeGeofences,
+                submittedLocations = submittedLocations
+            )
+
+            cancelPendingEndSession()
+            startSessionLocked(
+                packageName = targetPackage,
+                ctx = detectedContext,
+                goalsCount = goals.size,
+                activeInterventionType = snapshot.activeInterventionType
+            )
+            Log.d("SESSION", "prepared goal-advancement session after daily goals prompt for $targetPackage")
         }
     }
 
@@ -478,6 +519,11 @@ class SessionManager(
             return
         }
 
+        if (activeSessionId != null && activeApp != packageName) {
+            Log.d("SESSION", "switching target app from $activeApp to $packageName; ending previous session first")
+            endCurrentSessionLocked(launchContextValidation = false)
+        }
+
         val locationAtStart = ContextDetector.toLocationContextType(ctx)
 
         val record = SessionRecord(
@@ -538,15 +584,22 @@ class SessionManager(
                 Log.d("SESSION", "skipping automatic end because current foreground still belongs to the active session flow")
                 return
             }
+            endCurrentSessionLocked(launchContextValidation = true)
+        } catch (e: Exception) {
+            Log.e("SESSION", "failed to end session $id", e)
+        }
+    }
 
+    private suspend fun endCurrentSessionLocked(launchContextValidation: Boolean) {
+        val id = activeSessionId ?: return
+
+        try {
             val closedAtMs = System.currentTimeMillis()
             val openedAtMs = activeSessionOpenedAtMs
             val durationMs = openedAtMs?.let { closedAtMs - it }
 
-            // Launch the context confirmation dialog as early as possible so it appears
-            // quickly after the user presses Home. Guard against very short sessions that are
-            // likely caused by transient launcher/animation switches during app opening.
-            if (!contextValidationHandledForActiveSession &&
+            if (launchContextValidation &&
+                !contextValidationHandledForActiveSession &&
                 (durationMs == null || durationMs >= minSessionDurationForContextValidationMs)
             ) {
                 withContext(Dispatchers.Main.immediate) {
@@ -555,12 +608,10 @@ class SessionManager(
             } else {
                 Log.d(
                     "SESSION",
-                    "skipping context validation (alreadyHandled=$contextValidationHandledForActiveSession, durationMs=$durationMs)"
+                    "skipping context validation (requested=$launchContextValidation alreadyHandled=$contextValidationHandledForActiveSession, durationMs=$durationMs)"
                 )
             }
 
-            // Re-detect context at the moment the session ends so we can
-            // compare it with the context at session start in Firestore.
             val bedtimeStart = bedtimeRepo.bedtime.first()
             val submittedLocations = locationsRepo.locations.first()
             val activeGeofences = GeofenceContextStore.activeGeofenceIds.value
@@ -593,24 +644,26 @@ class SessionManager(
                 detectedContextAtEnd = locationContextAtEnd
             )
             Log.d("SESSION", "ended session $id")
-        } catch (e: Exception) {
-            Log.e("SESSION", "failed to end session $id", e)
         } finally {
-            cancelPendingEndSession()
-            activeSessionId = null
-            activeApp = null
-            activeSessionOpenedAtMs = null
-            activeLocationAtStart = null
-            activeIntervention = null
-            contextValidationHandledForActiveSession = false
-            interventionUiVisible = false
-            clearInterventionLaunchGuard()
-            designFrictionShownForCurrentSession = false
-            designFrictionLaunchInProgress = false
-            cancelGoalAdvancementTrigger()
-            cancelSelfTrackingTrigger()
-            dailyGoalsPromptLaunchInProgress = false
+            resetActiveSessionState()
         }
+    }
+
+    private fun resetActiveSessionState() {
+        cancelPendingEndSession()
+        activeSessionId = null
+        activeApp = null
+        activeSessionOpenedAtMs = null
+        activeLocationAtStart = null
+        activeIntervention = null
+        contextValidationHandledForActiveSession = false
+        interventionUiVisible = false
+        clearInterventionLaunchGuard()
+        designFrictionShownForCurrentSession = false
+        designFrictionLaunchInProgress = false
+        cancelGoalAdvancementTrigger()
+        cancelSelfTrackingTrigger()
+        dailyGoalsPromptLaunchInProgress = false
     }
 
     private fun shouldSkipAutomaticEndForCurrentForeground(): Boolean {

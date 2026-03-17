@@ -62,6 +62,9 @@ class DailyGoalsPromptActivity : ComponentActivity() {
                             withContext(Dispatchers.IO) {
                                 val list = goals.map { DailyGoal(id = UUID.randomUUID().toString(), text = it) }
                                 goalsRepo.replaceAllGoals(list)
+                                (applicationContext as ThesisApp)
+                                    .sessionManager
+                                    .prepareGoalAdvancementSessionAfterDailyGoalsPrompt(targetPackage)
                             }
                             launchTargetAppAndFinish(targetPackage)
                         }
