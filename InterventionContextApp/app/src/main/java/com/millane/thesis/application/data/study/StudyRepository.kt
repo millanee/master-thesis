@@ -245,14 +245,17 @@ class StudyRepository(private val context: Context) {
     ): SusQuestionnaireSubmission {
         require(answers.isNotEmpty()) { "Answers must not be empty." }
         require(answers.size == questions.size) { "Questions and answers must have the same size." }
+        require(answers.size == STANDARD_SUS_ITEM_COUNT) {
+            "SUS questionnaire must contain exactly $STANDARD_SUS_ITEM_COUNT items."
+        }
         require(answers.all { it in 1..5 }) { "All answers must be between 1 and 5." }
 
         val participantId = getOrCreateParticipantId()
-        val susScore = calculateSusScore(answers)
+        val susScore = calculateStandardSusScore(answers)
         val submittedAtMs = System.currentTimeMillis()
         val responses = questions.mapIndexed { index, question ->
             mapOf(
-                "questionId" to "q${index + 1}",
+                "questionId" to "sus_${index + 1}",
                 "questionText" to question,
                 "answer" to answers[index]
             )
@@ -294,11 +297,29 @@ class StudyRepository(private val context: Context) {
         )
     }
 
-    private fun calculateSusScore(answers: List<Int>): Double {
-        val contributionSum = answers.mapIndexed { index, answer ->
-            if (index % 2 == 0) answer - 1 else 5 - answer
+    private fun calculateStandardSusScore(susAnswers: List<Int>): Double {
+        require(susAnswers.size == STANDARD_SUS_ITEM_COUNT) {
+            "Standard SUS scoring requires exactly $STANDARD_SUS_ITEM_COUNT answers."
+        }
+
+        // Standard SUS scoring:
+        // - odd-numbered items are positive, so contribution = answer - 1
+        // - even-numbered items are negative, so contribution = 5 - answer
+        // The 10 contributions sum to a value in [0, 40], which is then multiplied by 2.5
+        // to produce the final SUS score in [0, 100].
+        val susContributionSum = susAnswers.mapIndexed { index, answer ->
+            if (index % 2 == 0) {
+                answer - 1
+            } else {
+                5 - answer
+            }
         }.sum()
-        return contributionSum * (100.0 / (answers.size * 4.0))
+
+        return susContributionSum * 2.5
+    }
+
+    private companion object {
+        const val STANDARD_SUS_ITEM_COUNT = 10
     }
 }
 

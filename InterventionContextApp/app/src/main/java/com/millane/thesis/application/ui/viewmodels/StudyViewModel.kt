@@ -45,9 +45,16 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     private val notifier = StudyCompletionNotifier(app.applicationContext)
 
     val susQuestions: List<SusQuestion> = listOf(
-        SusQuestion("q1", "I think this app supported me in using social media more intentionally."),
-        SusQuestion("q2", "I found the intervention flow unnecessarily complicated."),
-        SusQuestion("q3", "I felt confident using this app during the study.")
+        SusQuestion("sus_1", "I think that I would like to use this app frequently."),
+        SusQuestion("sus_2", "I found the app unnecessarily complex."),
+        SusQuestion("sus_3", "I thought the app was easy to use."),
+        SusQuestion("sus_4", "I think that I would need the support of a technical person to be able to use this app."),
+        SusQuestion("sus_5", "I found the various functions in this app were well integrated."),
+        SusQuestion("sus_6", "I thought there was too much inconsistency in this app."),
+        SusQuestion("sus_7", "I would imagine that most people would learn to use this app very quickly."),
+        SusQuestion("sus_8", "I found the app very awkward to use."),
+        SusQuestion("sus_9", "I felt very confident using the app."),
+        SusQuestion("sus_10", "I needed to learn a lot of things before I could get going with this app.")
     )
 
     private data class ParticipantState(
