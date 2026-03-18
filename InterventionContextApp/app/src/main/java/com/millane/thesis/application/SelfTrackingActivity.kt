@@ -262,7 +262,7 @@ private data class UsageUiState(
             val lastContext =
                 snapshot.lastContextUsedAtMs?.let { dateFmt.format(Date(it)) }
 
-            val hourFractions = snapshot.perHourMs.map { ms ->
+            val hourFractions = snapshot.perHourContextMs.map { ms ->
                 val minutes = ms / 60000f
                 (minutes / 60f).coerceIn(0f, 1f)
             }

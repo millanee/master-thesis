@@ -5,6 +5,7 @@ import com.google.firebase.firestore.SetOptions
 import com.millane.thesis.application.domain.location.LocationContextType
 import com.millane.thesis.application.study.ContextValidationStatus
 import com.millane.thesis.application.study.InterventionAttempt
+import com.millane.thesis.application.study.InterventionType
 import com.millane.thesis.application.study.SessionRecord
 import kotlinx.coroutines.tasks.await
 
@@ -44,12 +45,26 @@ class FirestoreSessionRepository(
 
         val openedAtMs = snap.getLong("openedAtMs") ?: closedAtMs
         val durationMs = (closedAtMs - openedAtMs).coerceAtLeast(0L)
+        val activeInterventionType = snap.getString("activeInterventionType")
+        val responsiveness = if (
+            activeInterventionType == InterventionType.SELF_TRACKING.name ||
+            activeInterventionType == InterventionType.GOAL_ADVANCEMENT.name
+        ) {
+            val lastReactanceAnsweredAtMs = parseAttempts(snap.get("interventionAttempts"))
+                .lastOrNull { it.reactanceAnsweredAtMs != null }
+                ?.reactanceAnsweredAtMs
+
+            lastReactanceAnsweredAtMs?.let { (closedAtMs - it).coerceAtLeast(0L) }
+        } else {
+            null
+        }
 
         doc.set(
             mapOf(
                 "closedAtMs" to closedAtMs,
                 "durationMs" to durationMs,
-                "detectedContextAtEnd" to detectedContextAtEnd?.name
+                "detectedContextAtEnd" to detectedContextAtEnd?.name,
+                "responsiveness" to responsiveness
             ),
             SetOptions.merge()
         ).await()
