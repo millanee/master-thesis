@@ -14,6 +14,7 @@ data class SessionRecord(
     val openedAtMs: Long,
     val closedAtMs: Long? = null,
     val durationMs: Long? = null,
+    val responsiveness: Long? = null,
 
     val studyGroup: StudyGroup,
     val studyWeek: Int,

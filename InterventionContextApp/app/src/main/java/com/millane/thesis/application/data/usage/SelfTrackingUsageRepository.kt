@@ -10,10 +10,9 @@ import kotlinx.coroutines.flow.first
 
 data class SelfTrackingUsageSnapshot(
     val boundaryMs: Long,
-    val totalMsToday: Long,
     val totalContextMsToday: Long,
     val lastContextUsedAtMs: Long?,
-    val perHourMs: List<Long>
+    val perHourContextMs: List<Long>
 )
 
 class SelfTrackingUsageRepository(private val context: Context) {
@@ -29,8 +28,20 @@ class SelfTrackingUsageRepository(private val context: Context) {
         val LAST_BEDTIME_USED_AT_MS = longPreferencesKey("selftrack_last_bedtime_used_at_ms")
     }
 
-    private val hourKeys = (0 until 24).map { idx ->
+    private val totalHourKeys = (0 until 24).map { idx ->
         longPreferencesKey("selftrack_hour_ms_$idx")
+    }
+
+    private val homeHourKeys = (0 until 24).map { idx ->
+        longPreferencesKey("selftrack_home_hour_ms_$idx")
+    }
+
+    private val workHourKeys = (0 until 24).map { idx ->
+        longPreferencesKey("selftrack_work_hour_ms_$idx")
+    }
+
+    private val bedtimeHourKeys = (0 until 24).map { idx ->
+        longPreferencesKey("selftrack_bedtime_hour_ms_$idx")
     }
 
     private val dataStore
@@ -54,7 +65,10 @@ class SelfTrackingUsageRepository(private val context: Context) {
             e[Keys.LAST_WORK_USED_AT_MS] = 0L
             e[Keys.TOTAL_BEDTIME_MS_TODAY] = 0L
             e[Keys.LAST_BEDTIME_USED_AT_MS] = 0L
-            hourKeys.forEach { key -> e[key] = 0L }
+            totalHourKeys.forEach { key -> e[key] = 0L }
+            homeHourKeys.forEach { key -> e[key] = 0L }
+            workHourKeys.forEach { key -> e[key] = 0L }
+            bedtimeHourKeys.forEach { key -> e[key] = 0L }
         }
     }
 
@@ -82,7 +96,7 @@ class SelfTrackingUsageRepository(private val context: Context) {
         val (perHourDelta, totalDelta) = computeHourlyDeltas(boundary, clampedStart, clampedEnd)
 
         dataStore.edit { e ->
-            hourKeys.forEachIndexed { idx, key ->
+            totalHourKeys.forEachIndexed { idx, key ->
                 val old = e[key] ?: 0L
                 e[key] = old + perHourDelta[idx]
             }
@@ -92,10 +106,15 @@ class SelfTrackingUsageRepository(private val context: Context) {
 
             val totalKey = totalKeyForContext(contextType)
             val lastUsedKey = lastUsedKeyForContext(contextType)
+            val perHourKeys = perHourKeysForContext(contextType)
             if (totalKey != null && lastUsedKey != null) {
                 val oldContextTotal = e[totalKey] ?: 0L
                 e[totalKey] = oldContextTotal + totalDelta
                 e[lastUsedKey] = clampedEnd
+                perHourKeys?.forEachIndexed { idx, key ->
+                    val old = e[key] ?: 0L
+                    e[key] = old + perHourDelta[idx]
+                }
             }
         }
     }
@@ -114,8 +133,9 @@ class SelfTrackingUsageRepository(private val context: Context) {
 
         val prefs = dataStore.data.first()
 
-        val basePerHour = hourKeys.map { key -> prefs[key] ?: 0L }.toMutableList()
-        var total = prefs[Keys.TOTAL_MS_TODAY] ?: 0L
+        val contextHourKeys = perHourKeysForContext(ongoingContextType)
+        val basePerHour = contextHourKeys?.map { key -> prefs[key] ?: 0L }?.toMutableList()
+            ?: MutableList(24) { 0L }
         val totalContextKey = totalKeyForContext(ongoingContextType)
         val lastContextKey = lastUsedKeyForContext(ongoingContextType)
         var totalContext = totalContextKey?.let { prefs[it] ?: 0L } ?: 0L
@@ -133,7 +153,6 @@ class SelfTrackingUsageRepository(private val context: Context) {
                 basePerHour.indices.forEach { idx ->
                     basePerHour[idx] = basePerHour[idx] + perHourDelta[idx]
                 }
-                total += totalDelta
                 if (ongoingContextType != null) {
                     totalContext += totalDelta
                 }
@@ -142,10 +161,9 @@ class SelfTrackingUsageRepository(private val context: Context) {
 
         return SelfTrackingUsageSnapshot(
             boundaryMs = boundary,
-            totalMsToday = total,
             totalContextMsToday = totalContext,
             lastContextUsedAtMs = lastContextUsedAt,
-            perHourMs = basePerHour
+            perHourContextMs = basePerHour
         )
     }
 
@@ -160,6 +178,13 @@ class SelfTrackingUsageRepository(private val context: Context) {
         LocationContextType.HOME -> Keys.LAST_HOME_USED_AT_MS
         LocationContextType.WORK -> Keys.LAST_WORK_USED_AT_MS
         LocationContextType.BEDTIME -> Keys.LAST_BEDTIME_USED_AT_MS
+        null -> null
+    }
+
+    private fun perHourKeysForContext(contextType: LocationContextType?) = when (contextType) {
+        LocationContextType.HOME -> homeHourKeys
+        LocationContextType.WORK -> workHourKeys
+        LocationContextType.BEDTIME -> bedtimeHourKeys
         null -> null
     }
 
