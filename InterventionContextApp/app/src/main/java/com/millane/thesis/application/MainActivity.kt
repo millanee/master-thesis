@@ -62,6 +62,7 @@ import com.millane.thesis.application.ui.theme.PageBackground
 import com.millane.thesis.application.ui.theme.PrimaryText
 import com.millane.thesis.application.ui.theme.SecondaryText
 import com.millane.thesis.application.ui.theme.SubmitButtonBackground
+import com.millane.thesis.application.ui.viewmodels.RaffleEligibilityState
 import com.millane.thesis.application.ui.viewmodels.StudyStatus
 import com.millane.thesis.application.ui.viewmodels.StudyViewModel
 import com.millane.thesis.application.ui.viewmodels.SusQuestion
@@ -134,7 +135,10 @@ private fun AppEntryScreen() {
         }
 
         study.status == StudyStatus.COMPLETED && study.questionnaireSubmitted -> {
-            QuestionnaireSubmittedScreen()
+            QuestionnaireSubmittedScreen(
+                participantId = study.participantId,
+                studyVm = studyVm
+            )
         }
 
         else -> MainScreen()
@@ -288,9 +292,17 @@ private fun LikertScaleSelector(
 }
 
 @Composable
-private fun QuestionnaireSubmittedScreen() {
+private fun QuestionnaireSubmittedScreen(
+    participantId: String?,
+    studyVm: StudyViewModel
+) {
     val context = LocalContext.current
     val raffleUrl = "https://example.com/raffle"
+    val raffleEligibilityState by studyVm.raffleEligibilityState.collectAsState()
+
+    LaunchedEffect(participantId) {
+        studyVm.loadRaffleEligibility(participantId)
+    }
 
     Box(
         modifier = Modifier
@@ -314,18 +326,50 @@ private fun QuestionnaireSubmittedScreen() {
                 style = MaterialTheme.typography.bodyLarge,
                 color = PrimaryText
             )
-            Spacer(Modifier.height(16.dp))
-            TextButton(
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(raffleUrl))
-                    context.startActivity(intent)
+            when (val state = raffleEligibilityState) {
+                RaffleEligibilityState.Idle,
+                RaffleEligibilityState.Loading -> {
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = "Checking raffle eligibility...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = SecondaryText
+                    )
                 }
-            ) {
-                Text(
-                    text = raffleUrl,
-                    color = MaterialTheme.colorScheme.primary,
-                    textDecoration = TextDecoration.Underline
-                )
+
+                is RaffleEligibilityState.Loaded -> {
+                    if (state.result.isEligible) {
+                        Spacer(Modifier.height(16.dp))
+                        TextButton(
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(raffleUrl))
+                                context.startActivity(intent)
+                            }
+                        ) {
+                            Text(
+                                text = raffleUrl,
+                                color = MaterialTheme.colorScheme.primary,
+                                textDecoration = TextDecoration.Underline
+                            )
+                        }
+                    } else {
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            text = "You completed the questionnaire, but you did not meet the raffle eligibility criteria.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SecondaryText
+                        )
+                    }
+                }
+
+                RaffleEligibilityState.Error -> {
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = "We could not verify raffle eligibility right now.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = SecondaryText
+                    )
+                }
             }
         }
     }

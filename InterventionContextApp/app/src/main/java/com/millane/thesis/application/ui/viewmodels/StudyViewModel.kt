@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.millane.thesis.application.notifications.StudyCompletionNotifier
+import com.millane.thesis.application.data.study.RaffleEligibilityResult
 import com.millane.thesis.application.data.study.StudyRepository
 import com.millane.thesis.application.data.study.SusQuestionnaireSubmission
 import com.millane.thesis.application.study.InterventionType
@@ -39,10 +40,20 @@ data class SusQuestion(
     val prompt: String
 )
 
+sealed interface RaffleEligibilityState {
+    data object Idle : RaffleEligibilityState
+    data object Loading : RaffleEligibilityState
+    data class Loaded(val result: RaffleEligibilityResult) : RaffleEligibilityState
+    data object Error : RaffleEligibilityState
+}
+
 class StudyViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = StudyRepository(app.applicationContext)
     private val notifier = StudyCompletionNotifier(app.applicationContext)
+    private val _raffleEligibilityState =
+        kotlinx.coroutines.flow.MutableStateFlow<RaffleEligibilityState>(RaffleEligibilityState.Idle)
+    val raffleEligibilityState: StateFlow<RaffleEligibilityState> = _raffleEligibilityState
 
     val susQuestions: List<SusQuestion> = listOf(
         SusQuestion("sus_1", "I think that I would like to use this app frequently."),
@@ -160,5 +171,20 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
             answers = answers,
             questions = susQuestions.map { it.prompt }
         )
+    }
+
+    fun loadRaffleEligibility(participantId: String?) {
+        val safeParticipantId = participantId ?: return
+        if (_raffleEligibilityState.value is RaffleEligibilityState.Loaded) return
+
+        viewModelScope.launch {
+            try {
+                _raffleEligibilityState.value = RaffleEligibilityState.Loading
+                val result = repo.getRaffleEligibility(safeParticipantId)
+                _raffleEligibilityState.value = RaffleEligibilityState.Loaded(result)
+            } catch (_: Exception) {
+                _raffleEligibilityState.value = RaffleEligibilityState.Error
+            }
+        }
     }
 }

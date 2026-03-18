@@ -12,6 +12,7 @@ import com.millane.thesis.application.data.bedtime.BedtimeRepository
 import com.millane.thesis.application.data.datastore.appDataStore
 import com.millane.thesis.application.data.location.LocationsRepository
 import com.millane.thesis.application.domain.location.LocationContextType
+import com.millane.thesis.application.study.InterventionAttempt
 import com.millane.thesis.application.study.InterventionType
 import com.millane.thesis.application.study.StudyScheduleConfig
 import com.millane.thesis.application.study.StudyGroup
@@ -19,6 +20,7 @@ import com.millane.thesis.application.study.StudyManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.tasks.await
 import java.util.Calendar
 import java.util.UUID
 
@@ -297,6 +299,37 @@ class StudyRepository(private val context: Context) {
         )
     }
 
+    suspend fun getRaffleEligibility(participantId: String): RaffleEligibilityResult {
+        val sessionSnapshot = firestore.collection("sessions")
+            .whereEqualTo("participantId", participantId)
+            .get()
+            .await()
+
+        val appearedInterventionCount = sessionSnapshot.documents.sumOf { document ->
+            parseInterventionAttempts(document.get("interventionAttempts"))
+                .count { attempt -> attempt.shownAtMs > 0L }
+        }
+        val answeredReactanceCount = sessionSnapshot.documents.sumOf { document ->
+            parseInterventionAttempts(document.get("interventionAttempts"))
+                .count { attempt -> attempt.reactanceAnsweredAtMs != null }
+        }
+        val missingReactanceCount = (appearedInterventionCount - answeredReactanceCount).coerceAtLeast(0)
+
+        val goalAdvancementSessionsWithoutGoals = sessionSnapshot.documents.count { document ->
+            document.getString("activeInterventionType") == InterventionType.GOAL_ADVANCEMENT.name &&
+                (document.getLong("goalsCountAtSessionStart") ?: 0L) < 1L
+        }
+
+        return RaffleEligibilityResult(
+            isEligible = missingReactanceCount <= MAX_MISSING_REACTANCE_RESPONSES &&
+                goalAdvancementSessionsWithoutGoals <= MAX_GOAL_ADVANCEMENT_SESSIONS_WITHOUT_GOALS,
+            appearedInterventionCount = appearedInterventionCount,
+            answeredReactanceCount = answeredReactanceCount,
+            missingReactanceCount = missingReactanceCount,
+            goalAdvancementSessionsWithoutGoals = goalAdvancementSessionsWithoutGoals
+        )
+    }
+
     private fun calculateStandardSusScore(susAnswers: List<Int>): Double {
         require(susAnswers.size == STANDARD_SUS_ITEM_COUNT) {
             "Standard SUS scoring requires exactly $STANDARD_SUS_ITEM_COUNT answers."
@@ -318,8 +351,40 @@ class StudyRepository(private val context: Context) {
         return susContributionSum * 2.5
     }
 
+    private fun parseInterventionAttempts(raw: Any?): List<InterventionAttempt> {
+        val list = raw as? List<*> ?: return emptyList()
+        return list.mapNotNull { item ->
+            val map = item as? Map<*, *> ?: return@mapNotNull null
+
+            val shownAtMs = (map["shownAtMs"] as? Number)?.toLong() ?: return@mapNotNull null
+            val dismissedAtMs = (map["dismissedAtMs"] as? Number)?.toLong()
+            val appClosedViaIntervention = map["appClosedViaIntervention"] as? Boolean ?: false
+            val appClosedViaInterventionAtMs =
+                (map["appClosedViaInterventionAtMs"] as? Number)?.toLong()
+            val reactanceAnsweredAtMs =
+                (map["reactanceAnsweredAtMs"] as? Number)?.toLong()
+            val reactanceResponses =
+                (map["reactanceResponses"] as? List<*>)?.mapNotNull { (it as? Number)?.toInt() }
+                    ?: emptyList()
+            val reactanceMeanScore =
+                (map["reactanceMeanScore"] as? Number)?.toDouble()
+
+            InterventionAttempt(
+                shownAtMs = shownAtMs,
+                dismissedAtMs = dismissedAtMs,
+                appClosedViaIntervention = appClosedViaIntervention,
+                appClosedViaInterventionAtMs = appClosedViaInterventionAtMs,
+                reactanceAnsweredAtMs = reactanceAnsweredAtMs,
+                reactanceResponses = reactanceResponses,
+                reactanceMeanScore = reactanceMeanScore
+            )
+        }
+    }
+
     private companion object {
         const val STANDARD_SUS_ITEM_COUNT = 10
+        const val MAX_MISSING_REACTANCE_RESPONSES = 3
+        const val MAX_GOAL_ADVANCEMENT_SESSIONS_WITHOUT_GOALS = 3
     }
 }
 
@@ -336,4 +401,12 @@ data class SusQuestionnaireSubmission(
     val answers: List<Int>,
     val susScore: Double,
     val submittedAtMs: Long
+)
+
+data class RaffleEligibilityResult(
+    val isEligible: Boolean,
+    val appearedInterventionCount: Int,
+    val answeredReactanceCount: Int,
+    val missingReactanceCount: Int,
+    val goalAdvancementSessionsWithoutGoals: Int
 )
