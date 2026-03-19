@@ -403,6 +403,13 @@ class SessionManager(
         }
     }
 
+    suspend fun cancelDailyGoalsPromptFlow() {
+        sessionMutex.withLock {
+            dailyGoalsPromptLaunchInProgress = false
+            Log.d("SESSION", "daily goals prompt flow canceled before submission")
+        }
+    }
+
     fun currentSessionId(): String? = activeSessionId
 
     fun shouldShowDesignFriction(): Boolean {

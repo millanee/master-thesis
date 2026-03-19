@@ -75,6 +75,12 @@ class DailyGoalsRepository(
         }
     }
 
+    suspend fun clearLastDailyGoalsPromptDayMs() {
+        context.appDataStore.edit { prefs ->
+            prefs.remove(Keys.LAST_DAILY_GOALS_PROMPT_DAY_MS)
+        }
+    }
+
     private suspend fun getGoalsOnce(): List<DailyGoal> {
         val prefs = context.appDataStore.data.first()
         val raw = prefs[Keys.DAILY_GOALS_JSON]

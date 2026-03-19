@@ -27,7 +27,6 @@ import androidx.compose.ui.window.Dialog
 import com.millane.thesis.application.data.dailygoals.DailyGoalsRepository
 import com.millane.thesis.application.domain.dailygoals.DailyGoal
 import com.millane.thesis.application.ui.theme.*
-import com.millane.thesis.application.util.getCurrentStudyDayBoundary4AmMs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,6 +38,8 @@ import java.util.UUID
  * After confirm, the user is taken back to the originally opened target app.
  */
 class DailyGoalsPromptActivity : ComponentActivity() {
+
+    private var goalsSubmitted = false
 
     companion object {
         const val EXTRA_TARGET_PACKAGE = "com.millane.thesis.application.extra.DAILY_GOALS_TARGET_PACKAGE"
@@ -58,6 +59,7 @@ class DailyGoalsPromptActivity : ComponentActivity() {
             InterventionContextAppTheme {
                 DailyGoalsPromptContent(
                     onConfirm = { goals ->
+                        goalsSubmitted = true
                         lifecycleScope.launch {
                             withContext(Dispatchers.IO) {
                                 val list = goals.map { DailyGoal(id = UUID.randomUUID().toString(), text = it) }
@@ -70,6 +72,19 @@ class DailyGoalsPromptActivity : ComponentActivity() {
                         }
                     }
                 )
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (goalsSubmitted || isChangingConfigurations) return
+
+        val goalsRepo = DailyGoalsRepository(applicationContext)
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                goalsRepo.clearLastDailyGoalsPromptDayMs()
+                (applicationContext as ThesisApp).sessionManager.cancelDailyGoalsPromptFlow()
             }
         }
     }
