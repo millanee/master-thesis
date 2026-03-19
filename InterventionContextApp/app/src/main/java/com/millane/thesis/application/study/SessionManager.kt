@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.view.inputmethod.InputMethodManager
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.millane.thesis.application.ContextValidationActivity
@@ -166,6 +167,29 @@ class SessionManager(
         pendingInterventionLaunchAtMs = 0L
     }
 
+    private fun currentKeyboardPackages(): Set<String> {
+        val inputMethodManager = context.getSystemService(InputMethodManager::class.java) ?: return emptySet()
+        return inputMethodManager.enabledInputMethodList
+            .mapNotNull { it.packageName }
+            .toSet()
+    }
+
+    private fun shouldIgnoreForegroundPackage(packageName: String): Boolean {
+        val knownTransientPackages = setOf(
+            "com.android.systemui",
+            "android",
+            "com.google.android.permissioncontroller",
+            "com.android.intentresolver",
+            "com.google.android.apps.nexuslauncher"
+        )
+
+        return packageName in knownTransientPackages ||
+            packageName == "android" ||
+            packageName.contains("inputmethod", ignoreCase = true) ||
+            packageName.contains("keyboard", ignoreCase = true) ||
+            packageName in currentKeyboardPackages()
+    }
+
     @RequiresApi(Build.VERSION_CODES.O)
     fun onForegroundAppChanged(packageName: String) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -174,6 +198,12 @@ class SessionManager(
                 previousForegroundPackage = lastForegroundPackage
                 lastForegroundPackage = packageName
                 Log.d("SESSION", "Foreground app changed: $packageName")
+
+                if (shouldIgnoreForegroundPackage(packageName)) {
+                    cancelPendingEndSession()
+                    Log.d("SESSION", "Ignoring transient system foreground package: $packageName")
+                    return@withLock
+                }
 
                 // Don't end session when our app comes to foreground (e.g. FrictionActivity).
                 if (packageName == context.packageName) {
@@ -253,6 +283,14 @@ class SessionManager(
                 )
 
                 Log.d("SESSION", "detected context = $detectedContext")
+
+                if (snapshot.activeInterventionType == InterventionType.GOAL_ADVANCEMENT &&
+                    dailyGoalsPromptLaunchInProgress
+                ) {
+                    cancelPendingEndSession()
+                    Log.d("SESSION", "daily goals prompt still active; skipping session changes")
+                    return@withLock
+                }
 
                 // Goal Advancement: first target-app open after 4 AM should prompt for daily goals.
                 // Check this BEFORE the context check so we show the prompt even when geofences
@@ -334,6 +372,7 @@ class SessionManager(
         sessionMutex.withLock {
             val snapshot = studyRepo.getCurrentStudySnapshot() ?: return
             if (snapshot.activeInterventionType != InterventionType.GOAL_ADVANCEMENT) return
+            dailyGoalsPromptLaunchInProgress = false
 
             if (activeSessionId != null && activeApp == targetPackage) {
                 cancelPendingEndSession()

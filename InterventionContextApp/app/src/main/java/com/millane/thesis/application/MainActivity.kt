@@ -322,7 +322,7 @@ private fun QuestionnaireSubmittedScreen(
             )
             Spacer(Modifier.height(16.dp))
             Text(
-                text = "You qualified for the raffle. If you want to participate in the raffle you must submit your email address via the link. Your email adress can not be attributed to your study results.",
+                text = "If you want to participate in the raffle you must submit your email address via the link. Your email adress can not be attributed to your study results.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = PrimaryText
             )

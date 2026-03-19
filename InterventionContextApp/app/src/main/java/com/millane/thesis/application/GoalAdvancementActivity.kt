@@ -208,7 +208,7 @@ private fun GoalAdvancementScreen(
             message = "You've been using this app for a while. Try another thing instead:", // "You've been using this app for $sessionDurationMinutes minute${if (sessionDurationMinutes == 1) "" else "s"}. Would you like to work on something from your goals list instead?",
             bullets = bullets,
             confirmLabel = "Close app",
-            dismissLabel = "Continue using app",
+            dismissLabel = "Proceed",
             onConfirm = {
                 onChoiceMade()
                 pendingGoHome = true

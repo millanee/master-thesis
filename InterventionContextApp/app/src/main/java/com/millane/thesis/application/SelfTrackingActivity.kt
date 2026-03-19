@@ -355,7 +355,7 @@ private fun UsageStatisticsDialog(
                         modifier = Modifier.weight(1f)
                     )
                     DialogButton(
-                        label = "Dismiss",
+                        label = "Proceed",
                         background = Color(0xFFE8B8B8),
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f)
