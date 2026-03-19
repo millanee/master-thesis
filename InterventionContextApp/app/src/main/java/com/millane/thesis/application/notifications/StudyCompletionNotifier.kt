@@ -40,10 +40,10 @@ class StudyCompletionNotifier(
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Study complete")
-            .setContentText("Fill out the questionnaire in the app and leave your email if you want to join the raffle.")
+            .setContentText("Open the app to check whether you are eligible for the raffle.")
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(
-                    "Your study period is over. Fill out the questionnaire in the app and leave your email if you want to participate in the study raffle."
+                    "Your study period is over. Open the app to check whether you are eligible for the raffle and access the raffle link if you qualify."
                 )
             )
             .setPriority(NotificationCompat.PRIORITY_HIGH)

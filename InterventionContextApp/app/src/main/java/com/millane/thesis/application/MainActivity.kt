@@ -92,17 +92,16 @@ private fun AppEntryScreen() {
         studyVm.initIfMissing()
     }
 
-    LaunchedEffect(study.status, study.questionnaireSubmitted) {
-        if (study.status == StudyStatus.COMPLETED && !study.questionnaireSubmitted) {
+    LaunchedEffect(study.status) {
+        if (study.status == StudyStatus.COMPLETED) {
             studyVm.maybeShowStudyCompletionNotification()
         }
     }
 
-    LaunchedEffect(study.status, study.questionnaireSubmitted) {
+    LaunchedEffect(study.status) {
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             study.status == StudyStatus.COMPLETED &&
-            !study.questionnaireSubmitted &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -127,14 +126,7 @@ private fun AppEntryScreen() {
             )
         }
 
-        study.status == StudyStatus.COMPLETED && !study.questionnaireSubmitted -> {
-            StudyQuestionnaireScreen(
-                questions = studyVm.susQuestions,
-                onSubmit = { answers -> studyVm.submitSusQuestionnaire(answers) }
-            )
-        }
-
-        study.status == StudyStatus.COMPLETED && study.questionnaireSubmitted -> {
+        study.status == StudyStatus.COMPLETED -> {
             QuestionnaireSubmittedScreen(
                 participantId = study.participantId,
                 studyVm = studyVm
@@ -316,13 +308,13 @@ private fun QuestionnaireSubmittedScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                text = "Thank you",
+                text = "Study complete",
                 style = MaterialTheme.typography.headlineSmall,
                 color = PrimaryText
             )
             Spacer(Modifier.height(16.dp))
             Text(
-                text = "If you want to participate in the raffle you must submit your email address via the link. Your email adress can not be attributed to your study results.",
+                text = "We are checking whether you are eligible for the raffle. If you are eligible, the link will appear below. Your email adress can not be attributed to your study results.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = PrimaryText
             )
@@ -340,6 +332,12 @@ private fun QuestionnaireSubmittedScreen(
                 is RaffleEligibilityState.Loaded -> {
                     if (state.result.isEligible) {
                         Spacer(Modifier.height(16.dp))
+                        Text(
+                            text = "You qualified for the raffle. If you want to participate in the raffle you must submit your email address via the link.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PrimaryText
+                        )
+                        Spacer(Modifier.height(8.dp))
                         TextButton(
                             onClick = {
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(raffleUrl))
@@ -355,7 +353,7 @@ private fun QuestionnaireSubmittedScreen(
                     } else {
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            text = "You completed the questionnaire, but you did not meet the raffle eligibility criteria.",
+                            text = "You did not meet the raffle eligibility criteria.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = SecondaryText
                         )
