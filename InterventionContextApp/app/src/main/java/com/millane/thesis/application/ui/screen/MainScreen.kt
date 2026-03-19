@@ -76,6 +76,7 @@ fun MainScreen() {
         LocationsSection()
         BedtimeCard()
         SelectAppsCard()
+        Spacer(Modifier.height(20.dp))
     }
 }
 

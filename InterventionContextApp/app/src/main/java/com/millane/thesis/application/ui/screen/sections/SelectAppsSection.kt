@@ -61,7 +61,7 @@ fun SelectAppsCard(
         Text("Select Apps", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Select the app(s) you want to intervene.\nYou can only select and submit them once.\nIf you do not submit your choice on the day before the study starts, both apps are targeted.",
+            "Select the app(s) you want to intervene.\nYou can only select and submit them once.",
             fontSize = 14.sp,
             color = SecondaryText
         )
