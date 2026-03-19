@@ -463,7 +463,6 @@ private fun HourRow(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Spacer(Modifier.width(28.dp))
@@ -475,11 +474,18 @@ private fun HourRow(
                     Text(text = label, fontSize = 10.sp, color = SecondaryText)
                 }
             }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top
+        ) {
+            Spacer(Modifier.width(28.dp))
+            Spacer(Modifier.weight(1f))
             Text(
                 text = titleSuffix,
                 fontSize = 10.sp,
-                color = SecondaryText,
-                modifier = Modifier.padding(start = 4.dp)
+                color = SecondaryText
             )
         }
     }
