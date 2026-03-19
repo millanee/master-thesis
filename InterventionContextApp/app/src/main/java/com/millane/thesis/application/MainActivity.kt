@@ -410,7 +410,15 @@ private fun NicknameScreen(
                 onValueChange = { nickname = it },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                label = { Text("Nickname") }
+                label = { Text("Nickname", color = PrimaryText) },
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = PrimaryText,
+                    unfocusedTextColor = PrimaryText,
+                    disabledTextColor = PrimaryText.copy(alpha = 0.6f),
+                    focusedLabelColor = PrimaryText,
+                    unfocusedLabelColor = PrimaryText,
+                    cursorColor = PrimaryText
+                )
             )
             Spacer(Modifier.height(16.dp))
             androidx.compose.material3.Button(

@@ -122,6 +122,14 @@ private fun DailyGoalsPromptContent(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         keyboardActions = KeyboardActions(
                             onNext = { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down) }
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = PrimaryText,
+                            unfocusedTextColor = PrimaryText,
+                            disabledTextColor = PrimaryText.copy(alpha = 0.6f),
+                            cursorColor = PrimaryText,
+                            focusedBorderColor = PrimaryText,
+                            unfocusedBorderColor = SecondaryText
                         )
                     )
                 }

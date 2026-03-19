@@ -170,6 +170,14 @@ private fun LocationPanel(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = PrimaryText,
+                        unfocusedTextColor = PrimaryText,
+                        disabledTextColor = PrimaryText.copy(alpha = 0.6f),
+                        cursorColor = PrimaryText,
+                        focusedBorderColor = PrimaryText,
+                        unfocusedBorderColor = SecondaryText
                     )
                 )
 

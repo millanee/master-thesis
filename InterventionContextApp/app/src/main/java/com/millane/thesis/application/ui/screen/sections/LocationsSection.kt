@@ -30,11 +30,17 @@ import com.millane.thesis.application.ui.location.geocodeAddress
 import com.millane.thesis.application.ui.location.reverseGeocode
 import com.millane.thesis.application.ui.viewmodels.LocationsViewModel
 import kotlinx.coroutines.launch
+import kotlin.math.asin
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 @Composable
 fun LocationsSection(
     vm: LocationsViewModel = viewModel()
 ) {
+    val minHomeWorkDistanceMeters = 270.0
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -98,6 +104,40 @@ fun LocationsSection(
 
             val resolved = reverseGeocode(context, latLng)
             val displayAddress = resolved?.formatted ?: trimmed
+
+            val normalizedNewAddress = displayAddress.trim().lowercase()
+            val conflictingLocation = draftLocations.firstOrNull { existing ->
+                existing.contextType != type &&
+                    (
+                        (existing.contextType == LocationContextType.HOME && type == LocationContextType.WORK) ||
+                            (existing.contextType == LocationContextType.WORK && type == LocationContextType.HOME)
+                        ) &&
+                    existing.displayAddress.trim().lowercase() == normalizedNewAddress
+            }
+
+            if (conflictingLocation != null) {
+                helperText = "This address is already set for ${conflictingLocation.contextType.name.lowercase()}. Choose a different address."
+                return@launch
+            }
+
+            val tooCloseLocation = draftLocations.firstOrNull { existing ->
+                existing.contextType != type &&
+                    (
+                        (existing.contextType == LocationContextType.HOME && type == LocationContextType.WORK) ||
+                            (existing.contextType == LocationContextType.WORK && type == LocationContextType.HOME)
+                        ) &&
+                    distanceMeters(
+                        lat1 = existing.latitude,
+                        lon1 = existing.longitude,
+                        lat2 = latLng.lat,
+                        lon2 = latLng.lng
+                    ) < minHomeWorkDistanceMeters
+            }
+
+            if (tooCloseLocation != null) {
+                helperText = "Home and work locations must be at least 270 meters apart."
+                return@launch
+            }
 
             vm.addDraft(
                 LocationEntry(
@@ -183,4 +223,22 @@ fun LocationsSection(
             }
         )
     }
+}
+
+private fun distanceMeters(
+    lat1: Double,
+    lon1: Double,
+    lat2: Double,
+    lon2: Double
+): Double {
+    val earthRadiusMeters = 6_371_000.0
+    val lat1Rad = Math.toRadians(lat1)
+    val lat2Rad = Math.toRadians(lat2)
+    val deltaLatRad = Math.toRadians(lat2 - lat1)
+    val deltaLonRad = Math.toRadians(lon2 - lon1)
+
+    val a = sin(deltaLatRad / 2).pow(2) +
+        cos(lat1Rad) * cos(lat2Rad) * sin(deltaLonRad / 2).pow(2)
+    val c = 2 * asin(sqrt(a))
+    return earthRadiusMeters * c
 }
