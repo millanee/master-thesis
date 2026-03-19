@@ -320,13 +320,20 @@ class StudyRepository(private val context: Context) {
                 (document.getLong("goalsCountAtSessionStart") ?: 0L) < 1L
         }
 
+        val unansweredContextConfirmationCount = sessionSnapshot.documents.count { document ->
+            document.getLong("closedAtMs") != null &&
+                document.get("contextValidationStatus") == null
+        }
+
         return RaffleEligibilityResult(
             isEligible = missingReactanceCount <= MAX_MISSING_REACTANCE_RESPONSES &&
-                goalAdvancementSessionsWithoutGoals <= MAX_GOAL_ADVANCEMENT_SESSIONS_WITHOUT_GOALS,
+                goalAdvancementSessionsWithoutGoals <= MAX_GOAL_ADVANCEMENT_SESSIONS_WITHOUT_GOALS &&
+                unansweredContextConfirmationCount <= MAX_UNANSWERED_CONTEXT_CONFIRMATIONS,
             appearedInterventionCount = appearedInterventionCount,
             answeredReactanceCount = answeredReactanceCount,
             missingReactanceCount = missingReactanceCount,
-            goalAdvancementSessionsWithoutGoals = goalAdvancementSessionsWithoutGoals
+            goalAdvancementSessionsWithoutGoals = goalAdvancementSessionsWithoutGoals,
+            unansweredContextConfirmationCount = unansweredContextConfirmationCount
         )
     }
 
@@ -385,6 +392,7 @@ class StudyRepository(private val context: Context) {
         const val STANDARD_SUS_ITEM_COUNT = 10
         const val MAX_MISSING_REACTANCE_RESPONSES = 3
         const val MAX_GOAL_ADVANCEMENT_SESSIONS_WITHOUT_GOALS = 3
+        const val MAX_UNANSWERED_CONTEXT_CONFIRMATIONS = 3
     }
 }
 
@@ -408,5 +416,6 @@ data class RaffleEligibilityResult(
     val appearedInterventionCount: Int,
     val answeredReactanceCount: Int,
     val missingReactanceCount: Int,
-    val goalAdvancementSessionsWithoutGoals: Int
+    val goalAdvancementSessionsWithoutGoals: Int,
+    val unansweredContextConfirmationCount: Int
 )
