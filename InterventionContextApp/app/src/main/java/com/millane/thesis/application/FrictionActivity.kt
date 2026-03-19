@@ -231,7 +231,7 @@ private fun FrictionCountdownScreen(
                 modifier = Modifier,
                 textAlign = TextAlign.Start,
                 text = buildAnnotatedString {
-                    append("Take a deep breath")
+                    append("It's time to take a \ndeep breath")
                     repeat(3) { idx ->
                         val visible = idx < dotCount
                         withStyle(
