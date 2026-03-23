@@ -289,7 +289,7 @@ private fun QuestionnaireSubmittedScreen(
     studyVm: StudyViewModel
 ) {
     val context = LocalContext.current
-    val raffleUrl = "https://example.com/raffle"
+    val raffleUrl = "https://www.survey-xact.dk/LinkCollector?key=21WNARCDU29N"
     val raffleEligibilityState by studyVm.raffleEligibilityState.collectAsState()
 
     LaunchedEffect(participantId) {
