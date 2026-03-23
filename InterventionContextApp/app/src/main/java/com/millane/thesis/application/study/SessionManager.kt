@@ -34,6 +34,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class SessionManager(
     private val context: Context
@@ -425,6 +428,7 @@ class SessionManager(
                     packageName = packageName,
                     ctx = detectedContext,
                     goalsCount = goals.size,
+                    goalTexts = goals.map { it.text },
                     activeInterventionType = snapshot.activeInterventionType
                 )
             }
@@ -474,6 +478,7 @@ class SessionManager(
                 packageName = targetPackage,
                 ctx = detectedContext,
                 goalsCount = goals.size,
+                goalTexts = goals.map { it.text },
                 activeInterventionType = snapshot.activeInterventionType
             )
             Log.d("SESSION", "prepared goal-advancement session after daily goals prompt for $targetPackage")
@@ -636,6 +641,7 @@ class SessionManager(
         packageName: String,
         ctx: DetectedContext,
         goalsCount: Int,
+        goalTexts: List<String>,
         activeInterventionType: InterventionType
     ) {
         if (activeSessionId != null && activeApp == packageName) {
@@ -649,16 +655,25 @@ class SessionManager(
         }
 
         val locationAtStart = ContextDetector.toLocationContextType(ctx)
+        val openedAtMs = System.currentTimeMillis()
+        val sessionDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            .format(Date(openedAtMs))
 
         val record = SessionRecord(
             participantId = studyRepo.getCurrentStudySnapshot()?.participantId ?: return,
             targetAppPackage = packageName,
-            openedAtMs = System.currentTimeMillis(),
+            openedAtMs = openedAtMs,
+            sessionDate = sessionDate,
             studyGroup = studyRepo.getCurrentStudySnapshot()?.studyGroup ?: return,
             studyWeek = studyRepo.getCurrentStudySnapshot()?.studyWeek ?: return,
             activeInterventionType = activeInterventionType,
             detectedContextAtStart = locationAtStart,
-            goalsCountAtSessionStart = goalsCount
+            goalsCountAtSessionStart = goalsCount,
+            goalsTextAtSessionStart = if (activeInterventionType == InterventionType.GOAL_ADVANCEMENT) {
+                goalTexts
+            } else {
+                emptyList()
+            }
         )
 
         activeSessionId = record.sessionId

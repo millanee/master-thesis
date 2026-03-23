@@ -12,6 +12,7 @@ data class SessionRecord(
     val targetAppPackage: String,
 
     val openedAtMs: Long,
+    val sessionDate: String,
     val closedAtMs: Long? = null,
     val durationMs: Long? = null,
     val responsiveness: Long? = null,
@@ -26,6 +27,7 @@ data class SessionRecord(
     val contextValidationStatus: ContextValidationStatus? = null,
 
     val goalsCountAtSessionStart: Int = 0,
+    val goalsTextAtSessionStart: List<String> = emptyList(),
 
     val interventionAttempts: List<InterventionAttempt> = emptyList()
 )
