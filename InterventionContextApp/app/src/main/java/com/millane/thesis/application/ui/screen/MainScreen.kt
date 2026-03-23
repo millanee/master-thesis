@@ -21,6 +21,7 @@ import com.millane.thesis.application.ui.viewmodels.AppSelectionViewModel
 import com.millane.thesis.application.ui.viewmodels.BedtimeViewModel
 import com.millane.thesis.application.ui.viewmodels.LocationsViewModel
 import com.millane.thesis.application.ui.viewmodels.DailyGoalsViewModel
+import com.millane.thesis.application.ui.viewmodels.StudyStatus
 import com.millane.thesis.application.ui.viewmodels.StudyViewModel
 
 @Composable
@@ -40,6 +41,14 @@ fun MainScreen() {
     val bedtimeSubmitted by bedtimeVm.isSubmitted.collectAsState()
     val locationsSubmitted by locationsVm.isSubmitted.collectAsState()
     val appsSubmitted by appsVm.isSubmitted.collectAsState()
+    val studyDayNumber = run {
+        val start = study.startDateMs
+        if (start == null || study.status == StudyStatus.NOT_STARTED) {
+            null
+        } else {
+            (((System.currentTimeMillis() - start).coerceAtLeast(0L)) / (24L * 60 * 60 * 1000)).toInt() + 1
+        }
+    }
 
     LaunchedEffect(Unit) {
         studyVm.initIfMissing()
@@ -62,9 +71,9 @@ fun MainScreen() {
     ) {
         Spacer(Modifier.height(20.dp))
 
-        Text("Study participant: ${study.participantId ?: "-"}")
-        Text("Group: ${study.group ?: "-"}")
-        Text("Week: ${study.weekIndex ?: "-"}")
+        // Text("Study participant: ${study.participantId ?: "-"}")
+        // Text("Group: ${study.group ?: "-"}")
+        Text("Study day: ${studyDayNumber ?: "-"}")
         Text("Active: ${study.activeIntervention ?: "-"}")
 
         // Daily Goals - Goal Advancement
