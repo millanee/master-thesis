@@ -4,6 +4,9 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.millane.thesis.application.study.StudyGroup
 import kotlinx.coroutines.tasks.await
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class FirestoreStudyAssignment(
     private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
@@ -16,6 +19,9 @@ class FirestoreStudyAssignment(
      * stores participant record, and returns the assigned group.
      */
     suspend fun assignGroup(participantId: String, startDateMs: Long): StudyGroup {
+        val studyStartDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            .format(Date(startDateMs))
+
         val assigned = db.runTransaction { tx ->
             val snap = tx.get(metaDoc)
 
@@ -45,6 +51,7 @@ class FirestoreStudyAssignment(
                     "participantId" to participantId,
                     "group" to group.name,
                     "startDateMs" to startDateMs,
+                    "studyStartDate" to studyStartDate,
                     "createdAtMs" to System.currentTimeMillis()
                 ),
                 SetOptions.merge()
