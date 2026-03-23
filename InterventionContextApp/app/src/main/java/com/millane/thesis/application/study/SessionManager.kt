@@ -1,7 +1,9 @@
 package com.millane.thesis.application.study
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -94,11 +96,41 @@ class SessionManager(
     @Volatile
     private var previousForegroundPackage: String? = null
 
+    @Volatile
+    private var pendingContextValidationSessionId: String? = null
+
+    @Volatile
+    private var pendingContextValidationTargetPackage: String? = null
+
+    @Volatile
+    private var pendingContextValidationLaunchInProgress: Boolean = false
+
     // Some devices / launchers take several seconds between our Activity finishing and the
     // target app becoming foreground (especially with task/animation delays). If this window
     // is too small, we may incorrectly treat the transition as the user "leaving" the app and
     // trigger context validation on top of the target app.
     private val pendingReturnToTargetWindowMs = 15_000L
+
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> handleScreenTurnedOff()
+                Intent.ACTION_USER_PRESENT -> handleUserPresent()
+            }
+        }
+    }
+
+    init {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(screenStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(screenStateReceiver, filter)
+        }
+    }
 
     /** Call this before launching the target app from an intervention (e.g. after "Proceed" or "Continue")
      *  so the context confirmation is not shown for the brief transition. */
@@ -190,6 +222,46 @@ class SessionManager(
             packageName in currentKeyboardPackages()
     }
 
+    private fun handleScreenTurnedOff() {
+        CoroutineScope(Dispatchers.IO).launch {
+            sessionMutex.withLock {
+                if (activeSessionId == null) return@withLock
+                Log.d("SESSION", "screen turned off; ending active session immediately")
+                endCurrentSessionLocked(
+                    launchContextValidation = false,
+                    deferContextValidationUntilUnlock = true
+                )
+            }
+        }
+    }
+
+    private fun handleUserPresent() {
+        CoroutineScope(Dispatchers.IO).launch {
+            sessionMutex.withLock {
+                maybeLaunchPendingContextValidationLocked()
+            }
+        }
+    }
+
+    private suspend fun maybeLaunchPendingContextValidationLocked(): Boolean {
+        val sessionId = pendingContextValidationSessionId ?: return false
+        if (pendingContextValidationLaunchInProgress) return true
+
+        val targetPackage = pendingContextValidationTargetPackage
+        pendingContextValidationLaunchInProgress = true
+        pendingContextValidationSessionId = null
+        pendingContextValidationTargetPackage = null
+
+        withContext(Dispatchers.Main.immediate) {
+            launchContextValidationForSession(
+                sessionId = sessionId,
+                launchTargetPackageAfterSubmit = targetPackage
+            )
+        }
+        Log.d("SESSION", "launched pending context validation for session=$sessionId")
+        return true
+    }
+
     @RequiresApi(Build.VERSION_CODES.O)
     fun onForegroundAppChanged(packageName: String) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -198,6 +270,11 @@ class SessionManager(
                 previousForegroundPackage = lastForegroundPackage
                 lastForegroundPackage = packageName
                 Log.d("SESSION", "Foreground app changed: $packageName")
+
+                if (maybeLaunchPendingContextValidationLocked()) {
+                    Log.d("SESSION", "pending context validation took precedence over new foreground app")
+                    return@withLock
+                }
 
                 if (shouldIgnoreForegroundPackage(packageName)) {
                     cancelPendingEndSession()
@@ -466,6 +543,7 @@ class SessionManager(
         launchTargetPackageAfterSubmit: String? = null
     ) {
         val safeSessionId = sessionId ?: return
+        pendingContextValidationLaunchInProgress = false
         if (activeSessionId == safeSessionId) {
             contextValidationHandledForActiveSession = true
         }
@@ -636,25 +714,39 @@ class SessionManager(
         }
     }
 
-    private suspend fun endCurrentSessionLocked(launchContextValidation: Boolean) {
+    private suspend fun endCurrentSessionLocked(
+        launchContextValidation: Boolean,
+        deferContextValidationUntilUnlock: Boolean = false
+    ) {
         val id = activeSessionId ?: return
 
         try {
             val closedAtMs = System.currentTimeMillis()
             val openedAtMs = activeSessionOpenedAtMs
             val durationMs = openedAtMs?.let { closedAtMs - it }
+            val shouldLaunchContextValidation =
+                launchContextValidation &&
+                    !contextValidationHandledForActiveSession &&
+                    (durationMs == null || durationMs >= minSessionDurationForContextValidationMs)
 
-            if (launchContextValidation &&
-                !contextValidationHandledForActiveSession &&
-                (durationMs == null || durationMs >= minSessionDurationForContextValidationMs)
-            ) {
+            val shouldDeferContextValidation =
+                deferContextValidationUntilUnlock &&
+                    !contextValidationHandledForActiveSession &&
+                    (durationMs == null || durationMs >= minSessionDurationForContextValidationMs)
+
+            if (shouldLaunchContextValidation) {
                 withContext(Dispatchers.Main.immediate) {
                     launchContextValidationForSession(id)
                 }
+            } else if (shouldDeferContextValidation) {
+                pendingContextValidationSessionId = id
+                pendingContextValidationTargetPackage = activeApp
+                pendingContextValidationLaunchInProgress = false
+                Log.d("SESSION", "deferred context validation until unlock for session=$id")
             } else {
                 Log.d(
                     "SESSION",
-                    "skipping context validation (requested=$launchContextValidation alreadyHandled=$contextValidationHandledForActiveSession, durationMs=$durationMs)"
+                    "skipping context validation (requested=$launchContextValidation deferred=$deferContextValidationUntilUnlock alreadyHandled=$contextValidationHandledForActiveSession, durationMs=$durationMs)"
                 )
             }
 
