@@ -1,9 +1,35 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.google.services)
 }
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use(::load)
+    }
+}
+
+fun findFallbackGoogleApiKey(): String {
+    val googleServicesFile = project.file("google-services.json")
+    if (!googleServicesFile.exists()) return ""
+
+    val content = googleServicesFile.readText()
+    val match = """"current_key"\s*:\s*"([^"]+)"""".toRegex().find(content)
+    return match?.groupValues?.get(1).orEmpty()
+}
+
+fun escapeBuildConfigString(value: String): String =
+    value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+val placesApiKey = (
+    localProperties.getProperty("PLACES_API_KEY")
+        ?: findFallbackGoogleApiKey()
+    ).trim()
 
 android {
     namespace = "com.millane.thesis.application"
@@ -17,6 +43,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "PLACES_API_KEY", "\"${escapeBuildConfigString(placesApiKey)}\"")
     }
 
     buildTypes {
@@ -34,6 +61,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -61,4 +89,6 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.firestore)
+    implementation(libs.google.places)
+    implementation(libs.google.material)
 }

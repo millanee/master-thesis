@@ -102,8 +102,8 @@ fun LocationsSection(
                 return@launch
             }
 
-            val resolved = reverseGeocode(context, latLng)
-            val displayAddress = resolved?.formatted ?: trimmed
+            val resolved = reverseGeocode(context, latLng.latLng)
+            val displayAddress = latLng.formattedAddress ?: resolved?.formatted ?: trimmed
 
             val normalizedNewAddress = displayAddress.trim().lowercase()
             val conflictingLocation = draftLocations.firstOrNull { existing ->
@@ -129,8 +129,8 @@ fun LocationsSection(
                     distanceMeters(
                         lat1 = existing.latitude,
                         lon1 = existing.longitude,
-                        lat2 = latLng.lat,
-                        lon2 = latLng.lng
+                        lat2 = latLng.latLng.lat,
+                        lon2 = latLng.latLng.lng
                     ) < minHomeWorkDistanceMeters
             }
 
@@ -143,10 +143,10 @@ fun LocationsSection(
                 LocationEntry(
                     contextType = type,
                     displayAddress = displayAddress,
-                    latitude = latLng.lat,
-                    longitude = latLng.lng,
+                    latitude = latLng.latLng.lat,
+                    longitude = latLng.latLng.lng,
                     radiusMeters = if (type == LocationContextType.WORK) 150f else 120f,
-                    placeId = null
+                    placeId = latLng.placeId
                 )
             )
 
