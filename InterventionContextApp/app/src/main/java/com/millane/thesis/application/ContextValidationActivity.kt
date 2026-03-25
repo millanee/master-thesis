@@ -168,10 +168,13 @@ private fun ContextValidationScreen(
 
     val questionText: String? = if (!loadFinished) {
         null
-    } else if (contextLabel != null) {
-        "Was your context throughout this session the following: $contextLabel?"
     } else {
-        "Was the detected context your actual context throughout this session?"
+        when (contextLabel) {
+            "Home" -> "Did this session take place at Home (not working or studying)?"
+            "Work" -> "Did this session take place at Work location?"
+            "Bedtime" -> "Did this session take place while you were in bed before sleeping?"
+            else -> "Was the detected context your actual context throughout this session?"
+        }
     }
 
     Box(
