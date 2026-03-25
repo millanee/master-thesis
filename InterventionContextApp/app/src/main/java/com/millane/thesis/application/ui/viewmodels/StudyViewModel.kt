@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.millane.thesis.application.notifications.StudyCompletionNotifier
 import com.millane.thesis.application.data.study.RaffleEligibilityResult
+import com.millane.thesis.application.data.study.StudyFeedbackSubmission
 import com.millane.thesis.application.data.study.StudyRepository
 import com.millane.thesis.application.data.study.SusQuestionnaireSubmission
 import com.millane.thesis.application.study.InterventionType
@@ -32,6 +33,7 @@ data class StudySnapshot(
     val weekIndex: Int? = null,
     val activeIntervention: InterventionType? = null,
     val status: StudyStatus = StudyStatus.NOT_STARTED,
+    val feedbackSubmitted: Boolean = false,
     val questionnaireSubmitted: Boolean = false
 )
 
@@ -93,9 +95,10 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
             combine(repo.group, repo.startDateMs) { group, start ->
                 StudyState(group = group, startDateMs = start)
             },
+            repo.feedbackSubmitted,
             repo.questionnaireSubmitted,
             clock
-        ) { participantState, studyState, questionnaireSubmitted, now ->
+        ) { participantState, studyState, feedbackSubmitted, questionnaireSubmitted, now ->
             val pid = participantState.participantId
             val nickname = participantState.nickname
             val group = studyState.group
@@ -106,6 +109,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     nickname = nickname,
                     group = group,
                     startDateMs = start,
+                    feedbackSubmitted = feedbackSubmitted,
                     questionnaireSubmitted = questionnaireSubmitted
                 )
             } else {
@@ -122,6 +126,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                         group = group,
                         startDateMs = start,
                         status = status,
+                        feedbackSubmitted = feedbackSubmitted,
                         questionnaireSubmitted = questionnaireSubmitted
                     )
                 }
@@ -136,6 +141,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     weekIndex = w,
                     activeIntervention = active,
                     status = status,
+                    feedbackSubmitted = feedbackSubmitted,
                     questionnaireSubmitted = questionnaireSubmitted
                 )
             }
@@ -170,6 +176,16 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         return repo.submitSusQuestionnaire(
             answers = answers,
             questions = susQuestions.map { it.prompt }
+        )
+    }
+
+    suspend fun submitStudyFeedback(
+        experiencedTechnicalIssues: Boolean,
+        issueDescription: String
+    ): StudyFeedbackSubmission {
+        return repo.submitStudyFeedback(
+            experiencedTechnicalIssues = experiencedTechnicalIssues,
+            issueDescription = issueDescription
         )
     }
 

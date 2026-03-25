@@ -32,6 +32,7 @@ class StudyRepository(private val context: Context) {
         val GROUP = stringPreferencesKey("study_group")
         val START_DATE_MS = longPreferencesKey("study_start_date_ms")
         val QUESTIONNAIRE_SUBMITTED = booleanPreferencesKey("study_questionnaire_submitted")
+        val FEEDBACK_SUBMITTED = booleanPreferencesKey("study_feedback_submitted")
         val COMPLETION_NOTIFICATION_SHOWN = booleanPreferencesKey("study_completion_notification_shown")
     }
 
@@ -58,6 +59,9 @@ class StudyRepository(private val context: Context) {
 
     val questionnaireSubmitted: Flow<Boolean> =
         context.appDataStore.data.map { prefs -> prefs[Keys.QUESTIONNAIRE_SUBMITTED] ?: false }
+
+    val feedbackSubmitted: Flow<Boolean> =
+        context.appDataStore.data.map { prefs -> prefs[Keys.FEEDBACK_SUBMITTED] ?: false }
 
     val completionNotificationShown: Flow<Boolean> =
         context.appDataStore.data.map { prefs -> prefs[Keys.COMPLETION_NOTIFICATION_SHOWN] ?: false }
@@ -241,6 +245,42 @@ class StudyRepository(private val context: Context) {
         return true
     }
 
+    suspend fun submitStudyFeedback(
+        experiencedTechnicalIssues: Boolean,
+        issueDescription: String
+    ): StudyFeedbackSubmission {
+        val trimmedIssueDescription = issueDescription.trim()
+        if (experiencedTechnicalIssues) {
+            require(trimmedIssueDescription.isNotEmpty()) { "Issue description must not be blank when technical issues were reported." }
+        }
+
+        val participantId = getOrCreateParticipantId()
+        val submittedAtMs = System.currentTimeMillis()
+
+        firestore.collection("studyFeedback")
+            .document(participantId)
+            .set(
+                mapOf(
+                    "participantId" to participantId,
+                    "experiencedTechnicalIssues" to experiencedTechnicalIssues,
+                    "issueDescription" to trimmedIssueDescription,
+                    "submittedAtMs" to submittedAtMs
+                ),
+                SetOptions.merge()
+            )
+
+        context.appDataStore.edit { prefs ->
+            prefs[Keys.FEEDBACK_SUBMITTED] = true
+        }
+
+        return StudyFeedbackSubmission(
+            participantId = participantId,
+            experiencedTechnicalIssues = experiencedTechnicalIssues,
+            issueDescription = trimmedIssueDescription,
+            submittedAtMs = submittedAtMs
+        )
+    }
+
     suspend fun submitSusQuestionnaire(
         answers: List<Int>,
         questions: List<String>
@@ -408,6 +448,13 @@ data class SusQuestionnaireSubmission(
     val participantId: String,
     val answers: List<Int>,
     val susScore: Double,
+    val submittedAtMs: Long
+)
+
+data class StudyFeedbackSubmission(
+    val participantId: String,
+    val experiencedTechnicalIssues: Boolean,
+    val issueDescription: String,
     val submittedAtMs: Long
 )
 

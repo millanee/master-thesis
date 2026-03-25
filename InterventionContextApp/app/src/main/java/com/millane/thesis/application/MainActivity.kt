@@ -127,10 +127,14 @@ private fun AppEntryScreen() {
         }
 
         study.status == StudyStatus.COMPLETED -> {
-            QuestionnaireSubmittedScreen(
-                participantId = study.participantId,
-                studyVm = studyVm
-            )
+            if (!study.feedbackSubmitted) {
+                StudyFeedbackScreen(studyVm = studyVm)
+            } else {
+                QuestionnaireSubmittedScreen(
+                    participantId = study.participantId,
+                    studyVm = studyVm
+                )
+            }
         }
 
         else -> MainScreen()
@@ -279,6 +283,140 @@ private fun LikertScaleSelector(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StudyFeedbackScreen(
+    studyVm: StudyViewModel
+) {
+    var experiencedTechnicalIssues by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    var issueDescription by rememberSaveable { mutableStateOf("") }
+    var isSubmitting by rememberSaveable { mutableStateOf(false) }
+    val trimmedIssueDescription = issueDescription.trim()
+    val isSubmitEnabled = experiencedTechnicalIssues != null &&
+        (!experiencedTechnicalIssues!! || trimmedIssueDescription.isNotEmpty()) &&
+        !isSubmitting
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(PageBackground)
+            .padding(20.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        RoundedCard(
+            background = CardBackground,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "Study feedback",
+                style = MaterialTheme.typography.headlineSmall,
+                color = PrimaryText
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "Did you experience any technical issues with the app during the study?",
+                style = MaterialTheme.typography.bodyLarge,
+                color = PrimaryText
+            )
+            Spacer(Modifier.height(16.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = SecondaryText,
+                        shape = RoundedCornerShape(16.dp)
+                    ),
+                shape = RoundedCornerShape(16.dp),
+                color = InnerCardBackground
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = experiencedTechnicalIssues == true,
+                                onClick = { experiencedTechnicalIssues = true }
+                            )
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = experiencedTechnicalIssues == true,
+                            onClick = null
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text("Yes", color = PrimaryText)
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = experiencedTechnicalIssues == false,
+                                onClick = { experiencedTechnicalIssues = false }
+                            )
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = experiencedTechnicalIssues == false,
+                            onClick = null
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text("No", color = PrimaryText)
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "If yes, please describe the issue(s) you experienced.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = PrimaryText
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = issueDescription,
+                onValueChange = { issueDescription = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp),
+                label = { Text("Issue description", color = PrimaryText) },
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = PrimaryText,
+                    unfocusedTextColor = PrimaryText,
+                    disabledTextColor = PrimaryText.copy(alpha = 0.6f),
+                    focusedLabelColor = PrimaryText,
+                    unfocusedLabelColor = PrimaryText,
+                    cursorColor = PrimaryText
+                )
+            )
+            Spacer(Modifier.height(20.dp))
+            androidx.compose.material3.Button(
+                onClick = {
+                    if (!isSubmitEnabled) return@Button
+                    isSubmitting = true
+                },
+                enabled = isSubmitEnabled,
+                modifier = Modifier.fillMaxWidth(),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = SubmitButtonBackground,
+                    contentColor = PrimaryText
+                )
+            ) {
+                Text(if (isSubmitting) "Submitting..." else "Submit")
+            }
+        }
+    }
+
+    LaunchedEffect(isSubmitting) {
+        if (isSubmitting) {
+            studyVm.submitStudyFeedback(
+                experiencedTechnicalIssues = experiencedTechnicalIssues == true,
+                issueDescription = trimmedIssueDescription
+            )
         }
     }
 }
