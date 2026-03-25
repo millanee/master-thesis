@@ -390,9 +390,9 @@ class StudyRepository(private val context: Context) {
 
     private companion object {
         const val STANDARD_SUS_ITEM_COUNT = 10
-        const val MAX_MISSING_REACTANCE_RESPONSES = 3
-        const val MAX_GOAL_ADVANCEMENT_SESSIONS_WITHOUT_GOALS = 3
-        const val MAX_UNANSWERED_CONTEXT_CONFIRMATIONS = 3
+        const val MAX_MISSING_REACTANCE_RESPONSES = 6
+        const val MAX_GOAL_ADVANCEMENT_SESSIONS_WITHOUT_GOALS = 6
+        const val MAX_UNANSWERED_CONTEXT_CONFIRMATIONS = 8
     }
 }
 
