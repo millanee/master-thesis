@@ -36,6 +36,22 @@ object ContextDetector {
         val isHome = activeGeofenceIds.any { it in homeIds }
         val isWork = activeGeofenceIds.any { it in workIds }
 
+        return detectFromLocationPresence(
+            bedtimeStart = bedtimeStart,
+            isHome = isHome,
+            isWork = isWork,
+            now = now
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    fun detectFromLocationPresence(
+        bedtimeStart: String?,
+        isHome: Boolean,
+        isWork: Boolean,
+        now: LocalTime = LocalTime.now()
+    ): DetectedContext {
+
         val bedtimeReached = bedtimeStart?.let {
             val parts = it.split(":")
             if (parts.size == 2) {

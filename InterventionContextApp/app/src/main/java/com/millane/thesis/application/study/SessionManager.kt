@@ -4,14 +4,20 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.location.Location
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.inputmethod.InputMethodManager
 import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
 import com.millane.thesis.application.ContextValidationActivity
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.millane.thesis.application.DailyGoalsPromptActivity
 import com.millane.thesis.application.FrictionActivity
 import com.millane.thesis.application.GoalAdvancementActivity
@@ -24,6 +30,7 @@ import com.millane.thesis.application.data.study.FirestoreSessionRepository
 import com.millane.thesis.application.data.study.StudyRepository
 import com.millane.thesis.application.data.usage.SelfTrackingUsageRepository
 import com.millane.thesis.application.domain.location.LocationContextType
+import com.millane.thesis.application.domain.location.LocationEntry
 import com.millane.thesis.application.location.geofence.GeofenceContextStore
 import com.millane.thesis.application.notifications.StudyCompletionNotifier
 import com.millane.thesis.application.util.getCurrentStudyDayBoundary4AmMs
@@ -34,6 +41,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -68,10 +76,10 @@ class SessionManager(
     private var designFrictionLaunchInProgress: Boolean = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val goalAdvancementDelayMs = 15 * 60 * 1000L
+    private val goalAdvancementDelayMs = 1 * 60 * 1000L
     private var goalAdvancementRunnable: Runnable? = null
 
-    private val selfTrackingDelayMs = 15 * 60 * 1000L
+    private val selfTrackingDelayMs = 1 * 60 * 1000L
     private var selfTrackingRunnable: Runnable? = null
 
     /**
@@ -225,6 +233,89 @@ class SessionManager(
             packageName in currentKeyboardPackages()
     }
 
+    private fun hasLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private suspend fun getCurrentDeviceLocation(): Location? {
+        if (!hasLocationPermission()) return null
+
+        val client = LocationServices.getFusedLocationProviderClient(context)
+        val lastLocation = runCatching { client.lastLocation.await() }.getOrNull()
+        if (lastLocation != null) return lastLocation
+
+        val tokenSource = CancellationTokenSource()
+        return runCatching {
+            client.getCurrentLocation(
+                Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                tokenSource.token
+            ).await()
+        }.getOrNull()
+    }
+
+    private fun isWithinRadius(
+        currentLocation: Location,
+        entry: LocationEntry
+    ): Boolean {
+        val distanceMeters = FloatArray(1)
+        Location.distanceBetween(
+            currentLocation.latitude,
+            currentLocation.longitude,
+            entry.latitude,
+            entry.longitude,
+            distanceMeters
+        )
+        return distanceMeters[0] <= entry.radiusMeters
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private suspend fun detectCurrentContext(
+        bedtimeStart: String?,
+        submittedLocations: List<LocationEntry>
+    ): DetectedContext {
+        val activeGeofences = GeofenceContextStore.activeGeofenceIds.value
+        val detectedByGeofence = ContextDetector.detect(
+            bedtimeStart = bedtimeStart,
+            activeGeofenceIds = activeGeofences,
+            submittedLocations = submittedLocations
+        )
+        if (detectedByGeofence != DetectedContext.NONE) {
+            return detectedByGeofence
+        }
+
+        val currentLocation = getCurrentDeviceLocation()
+        if (currentLocation == null) {
+            Log.d("SESSION", "No current device location available for context fallback")
+            return DetectedContext.NONE
+        }
+
+        val isHome = submittedLocations
+            .filter { it.contextType == LocationContextType.HOME }
+            .any { isWithinRadius(currentLocation, it) }
+
+        val isWork = submittedLocations
+            .filter { it.contextType == LocationContextType.WORK }
+            .any { isWithinRadius(currentLocation, it) }
+
+        val fallbackDetected = ContextDetector.detectFromLocationPresence(
+            bedtimeStart = bedtimeStart,
+            isHome = isHome,
+            isWork = isWork
+        )
+        Log.d(
+            "SESSION",
+            "Context fallback via current location -> isHome=$isHome isWork=$isWork detected=$fallbackDetected"
+        )
+        return fallbackDetected
+    }
+
     private fun handleScreenTurnedOff() {
         CoroutineScope(Dispatchers.IO).launch {
             sessionMutex.withLock {
@@ -356,9 +447,8 @@ class SessionManager(
                 Log.d("SESSION", "active geofences = $activeGeofences")
                 Log.d("SESSION", "submitted locations = $submittedLocations")
 
-                val detectedContext = ContextDetector.detect(
+                val detectedContext = detectCurrentContext(
                     bedtimeStart = bedtimeStart,
-                    activeGeofenceIds = activeGeofences,
                     submittedLocations = submittedLocations
                 )
 
@@ -767,11 +857,9 @@ class SessionManager(
 
             val bedtimeStart = bedtimeRepo.bedtime.first()
             val submittedLocations = locationsRepo.locations.first()
-            val activeGeofences = GeofenceContextStore.activeGeofenceIds.value
 
-            val detectedContextEnd = ContextDetector.detect(
+            val detectedContextEnd = detectCurrentContext(
                 bedtimeStart = bedtimeStart,
-                activeGeofenceIds = activeGeofences,
                 submittedLocations = submittedLocations
             )
 

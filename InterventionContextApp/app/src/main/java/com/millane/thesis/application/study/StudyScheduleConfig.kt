@@ -9,7 +9,7 @@ enum class StudyScheduleMode {
 object StudyScheduleConfig {
 
     // Switch this back to STANDARD_21_DAY to restore the real study schedule.
-    val ACTIVE_MODE: StudyScheduleMode = StudyScheduleMode.STANDARD_21_DAY
+    val ACTIVE_MODE: StudyScheduleMode = StudyScheduleMode.FAST_TEST_15_MIN
 
     private const val MINUTE_MS = 60_000L
     private const val DAY_MS = 24L * 60 * 60 * 1000
