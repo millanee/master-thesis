@@ -76,10 +76,10 @@ class SessionManager(
     private var designFrictionLaunchInProgress: Boolean = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val goalAdvancementDelayMs = 1 * 60 * 1000L
+    private val goalAdvancementDelayMs = 15 * 60 * 1000L
     private var goalAdvancementRunnable: Runnable? = null
 
-    private val selfTrackingDelayMs = 1 * 60 * 1000L
+    private val selfTrackingDelayMs = 15 * 60 * 1000L
     private var selfTrackingRunnable: Runnable? = null
 
     /**
