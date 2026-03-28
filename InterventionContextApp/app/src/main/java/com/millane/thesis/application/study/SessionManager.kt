@@ -555,11 +555,9 @@ class SessionManager(
             val bedtimeStart = bedtimeRepo.bedtime.first()
             val goals = goalsRepo.goals.first()
             val submittedLocations = locationsRepo.locations.first()
-            val activeGeofences = GeofenceContextStore.activeGeofenceIds.value
 
-            val detectedContext = ContextDetector.detect(
+            val detectedContext = detectCurrentContext(
                 bedtimeStart = bedtimeStart,
-                activeGeofenceIds = activeGeofences,
                 submittedLocations = submittedLocations
             )
 
