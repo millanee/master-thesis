@@ -286,14 +286,13 @@ class SessionManager(
             activeGeofenceIds = activeGeofences,
             submittedLocations = submittedLocations
         )
-        if (detectedByGeofence != DetectedContext.NONE) {
-            return detectedByGeofence
-        }
-
         val currentLocation = getCurrentDeviceLocation()
         if (currentLocation == null) {
-            Log.d("SESSION", "No current device location available for context fallback")
-            return DetectedContext.NONE
+            Log.d(
+                "SESSION",
+                "No current device location available; using geofence-only context=$detectedByGeofence"
+            )
+            return detectedByGeofence
         }
 
         val isHome = submittedLocations
@@ -311,7 +310,7 @@ class SessionManager(
         )
         Log.d(
             "SESSION",
-            "Context fallback via current location -> isHome=$isHome isWork=$isWork detected=$fallbackDetected"
+            "Context via current location -> isHome=$isHome isWork=$isWork detected=$fallbackDetected geofenceDetected=$detectedByGeofence"
         )
         return fallbackDetected
     }
