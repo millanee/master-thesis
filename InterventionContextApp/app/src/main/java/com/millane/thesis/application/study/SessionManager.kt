@@ -474,33 +474,19 @@ class SessionManager(
                 }
 
                 if (detectedContext == DetectedContext.NONE) {
-                    // Allow session start when returning from goal prompt even with NONE context
-                    // (geofences may not have fired yet when user confirms goals and returns to target app).
-                    val boundaryMs = getCurrentStudyDayBoundary4AmMs()
-                    val lastPrompted = goalsRepo.getLastDailyGoalsPromptDayMs()
-                    val returningFromGoalPrompt = snapshot.activeInterventionType == InterventionType.GOAL_ADVANCEMENT &&
-                        lastPrompted == boundaryMs
-                    val allowSelfTrackingWithoutContext =
-                        snapshot.activeInterventionType == InterventionType.SELF_TRACKING
-                    if (!returningFromGoalPrompt && !allowSelfTrackingWithoutContext) {
-                        if (shouldSkipEndBecauseReturningToTarget()) {
-                            Log.d("SESSION", "skipping end: returning user to target app (context NONE)")
-                            return@withLock
-                        }
-                        if (shouldSkipEndBecauseInterventionLaunchInProgress()) {
-                            Log.d("SESSION", "skipping end: intervention launch in progress (context NONE)")
-                            return@withLock
-                        }
-                        scheduleEndSessionDebounced()
+                    if (shouldSkipEndBecauseReturningToTarget()) {
+                        Log.d("SESSION", "skipping end: returning user to target app (context NONE)")
                         return@withLock
                     }
-                    Log.d(
-                        "SESSION",
-                        "context NONE but allowing session start (goalPromptReturn=$returningFromGoalPrompt, selfTracking=$allowSelfTrackingWithoutContext)"
-                    )
+                    if (shouldSkipEndBecauseInterventionLaunchInProgress()) {
+                        Log.d("SESSION", "skipping end: intervention launch in progress (context NONE)")
+                        return@withLock
+                    }
+                    scheduleEndSessionDebounced()
+                    return@withLock
                 }
 
-                // Self-tracking: touching stats here ensures they are reset on first open after 4 AM.
+                // Self-tracking: touching stats here ensures they are reset on first contextual open after 4 AM.
                 if (snapshot.activeInterventionType == InterventionType.SELF_TRACKING) {
                     usageRepo.touchToday()
                 }
@@ -559,6 +545,14 @@ class SessionManager(
                 bedtimeStart = bedtimeStart,
                 submittedLocations = submittedLocations
             )
+
+            if (detectedContext == DetectedContext.NONE) {
+                Log.d(
+                    "SESSION",
+                    "goal prompt return did not detect a context; not starting session for $targetPackage"
+                )
+                return
+            }
 
             cancelPendingEndSession()
             startSessionLocked(
