@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -295,6 +297,8 @@ private fun UsageStatisticsDialog(
     onCloseApp: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val scrollState = rememberScrollState()
+
     Dialog(onDismissRequest = { }) {
         Surface(
             shape = RoundedCornerShape(16.dp),
@@ -306,7 +310,9 @@ private fun UsageStatisticsDialog(
                 .border(3.dp, Color(0xFFE6A7A7), RoundedCornerShape(16.dp))
         ) {
             Column(
-                modifier = Modifier.padding(18.dp),
+                modifier = Modifier
+                    .padding(18.dp)
+                    .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
