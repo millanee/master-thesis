@@ -2,7 +2,30 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Required for Geofencing -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- Required if Geofences should work reliably in background (Android 10+) -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- Optional but recommended for better coarse detection -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Optional: If you later use foreground service for tracking -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Required on Android 11+ so getLaunchIntentForPackage() works when user taps "Proceed" in design friction -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
+        android:name=".ThesisApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -10,18 +33,68 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.InterventionContextApp">
+        android:theme="@style/Theme.InterventionContextApp"
+        tools:targetApi="31">
+
+        <!-- ========= MAIN ACTIVITY ========= -->
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.InterventionContextApp">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".FrictionActivity"
+            android:exported="false"
+            android:theme="@style/Theme.InterventionContextApp" />
+
+        <activity
+            android:name=".DailyGoalsPromptActivity"
+            android:exported="false"
+            android:theme="@style/Theme.InterventionContextApp" />
+
+        <activity
+            android:name=".GoalAdvancementActivity"
+            android:exported="false"
+            android:theme="@style/Theme.InterventionContextApp" />
+
+        <activity
+            android:name=".SelfTrackingActivity"
+            android:exported="false"
+            android:theme="@style/Theme.InterventionContextApp" />
+
+        <activity
+            android:name=".ContextValidationActivity"
+            android:exported="false"
+            android:theme="@style/Theme.InterventionContextApp" />
+
+        <service
+            android:name=".apps.AppForegroundService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="false">
+
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
+            </intent-filter>
+
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config"/>
+        </service>
+
+        <!-- ========= GEOFENCE RECEIVER ========= -->
+
+        <receiver
+            android:name=".location.geofence.GeofenceReceiver"
+            android:exported="false" />
+
     </application>
 
 </manifest>

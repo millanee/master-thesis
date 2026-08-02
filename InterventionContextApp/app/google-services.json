@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "442462031050",
+    "project_id": "millane-thesis",
+    "storage_bucket": "millane-thesis.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:442462031050:android:602ad91e40f853a0b6b833",
+        "android_client_info": {
+          "package_name": "com.millane.thesis.application"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAlQLM90KpwsWej2uHDYDGqPi_tuE5GRwo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

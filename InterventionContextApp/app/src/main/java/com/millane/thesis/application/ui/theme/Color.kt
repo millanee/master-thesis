@@ -9,6 +9,7 @@ val CardBackground = Color(0xFFF3EEED)
 val InnerCardBackground = Color(0xFFFFFFFF)
 
 val GoalRowBackground = Color(0xFFE9E2E0)
+val AddBarBackground = Color(0xFFD8D8D8)
 
 val PrimaryText = Color(0xFF111111)
 val SecondaryText = Color(0xFF4A4A4A)
