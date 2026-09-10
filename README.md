@@ -131,9 +131,3 @@ No baseline week is included, as the study compares **interventions across conte
 - Session-based time-limit engine
 - Logging and data export
 - Study and protocol documentation
-
----
-
-## Status
-Implementation has not started yet.  
-This repository will be used to iteratively develop the Android prototype required for the Master’s thesis study.
